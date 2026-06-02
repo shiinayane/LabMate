@@ -1,6 +1,11 @@
 # The LabMate remote (git@github.com:shiinayane/LabMate.git) tracks ONLY the docs/ folder.
-# Everything else in this directory (research notes, archived memos, application analysis)
-# is local-only and must never be pushed.
+#
+# Layout of this git root (Docs/):
+#   docs/      -> pushed to GitHub (LabMate implementation docs)
+#   research/  -> local-only research notes, archive, application analysis (NEVER pushed)
+#
+# Allowlist strategy: ignore everything, then re-include docs/ only. Anything new dropped
+# at the root is ignored by default, so local material can never be pushed by accident.
 /*
 !/.gitignore
 !/docs/
