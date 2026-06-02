@@ -19,6 +19,12 @@ __pycache__/
 venv/
 .env
 
+# uv: project-local virtualenv lives in .venv/ (above). uv.lock IS tracked.
+
+# LabUtopia is cloned (not vendored) into src/labutopia/ as its own git repo,
+# imported into the unified .venv via PYTHONPATH/.pth. Do NOT track it here.
+/src/labutopia/
+
 # ML / run artifacts
 outputs/
 logs/

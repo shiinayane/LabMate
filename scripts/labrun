@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# labrun — run any command inside the unified uv venv with Isaac Sim's required env.
+#
+# The native-uv workflow needs no `source`/`activate`. This thin wrapper only adds the
+# two environment bits Isaac Sim 5.1 requires on this aarch64 / GB10 box, then defers to
+# `uv run` (which itself resolves/syncs the project .venv as needed):
+#
+#   * LD_PRELOAD=.../libgomp.so.1  — required; without it isaacsim aborts at import with a
+#     "shared libraries must be loaded before others" warning.
+#   * OMNI_KIT_ACCEPT_EULA=YES     — accept the Omniverse EULA non-interactively (otherwise
+#     the first kit bootstrap blocks on a Yes/No prompt and dies on EOF).
+#
+# Usage:
+#   ./scripts/labrun python -c "import isaacsim; print('ok')"
+#   ./scripts/labrun python scripts/run_episode.py ...
+#   (cd src/labutopia && ../../scripts/labrun python main.py --config-name level1_pick)
+set -euo pipefail
+
+LIBGOMP="/lib/aarch64-linux-gnu/libgomp.so.1"
+export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}${LIBGOMP}"
+export OMNI_KIT_ACCEPT_EULA="${OMNI_KIT_ACCEPT_EULA:-YES}"
+
+# Run from the repo root so `uv` finds pyproject.toml regardless of caller cwd.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec uv run --project "${REPO_ROOT}" "$@"
