@@ -50,6 +50,23 @@ in the episode (02) and read back from sim — no perception needed.
 
 ## Env / runtime
 
-Isaac Sim + LabUtopia env (see its README). LabMate's `src/` imports LabUtopia as a dependency /
-sibling on the `PYTHONPATH`; it does not fork it. Keep LabMate code separable so LabUtopia can be
-updated independently.
+**One environment, managed by `uv` (no conda).** A single project-local uv venv holds Isaac Sim +
+LabUtopia + LabMate. Use `uv run …` so no manual `source` is ever needed.
+
+```bash
+uv python pin 3.11 && uv venv
+# sim stack per LabUtopia README (CUDA 12.6 / Isaac Sim 5.1):
+uv pip install torch==2.9.0 torchvision==0.24.0 torchaudio==2.9.0 --index-url https://download.pytorch.org/whl/cu126
+uv pip install "isaacsim[all,extscache]==5.1.0" --extra-index-url https://pypi.nvidia.com
+uv pip install -r ../Sources/LabUtopia/requirements.txt
+uv pip install -e ".[dev]"        # LabMate, editable
+uv run python scripts/run_episode.py ...   # no source needed
+```
+
+- **LabUtopia is a separate sibling git repo** (`../Sources/LabUtopia`, cloned independently). LabMate
+  does not fork or vendor it; import it via editable install or `PYTHONPATH`.
+- The `labutopia/adapter.py` boundary must **lazy-import** Isaac Sim/LabUtopia (inside functions) so
+  `import labmate` and unit tests still work if the sim isn't present.
+- LabMate adds minimal deps (jsonschema + LLM SDK; reuse the venv's numpy/hydra) to avoid conflicts.
+
+> Detailed env bring-up is left to the implementer; the above is the intended shape.
