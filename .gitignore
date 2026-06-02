@@ -1,0 +1,9 @@
+# The LabMate remote (git@github.com:shiinayane/LabMate.git) tracks ONLY the docs/ folder.
+# Everything else in this directory (research notes, archived memos, application analysis)
+# is local-only and must never be pushed.
+/*
+!/.gitignore
+!/docs/
+
+# OS cruft (also inside docs/)
+.DS_Store
