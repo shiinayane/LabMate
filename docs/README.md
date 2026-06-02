@@ -21,7 +21,15 @@ object grounding → safety/clarification decision → skill execution → monit
 and turns that loop into a **reproducible benchmark + execution framework**.
 
 It is **not** a new simulator, an autonomous scientist, or an end-to-end VLA robot.
-The defensible contribution is an **evaluation protocol + execution framework**.
+
+**LabMate is a benchmark _and_ a proposed framework that wins on it.** The paper arc is:
+(1) the problem needs clarification + safety + execution jointly; (2) naive LLM-only / end-to-end
+VLA baselines fail on it in measurable ways; (3) we propose the LabMate framework — structured
+schema + scene-graph grounding + deterministic affordance + a safety shield + a joint
+ambiguity-and-safety decision router + closed-loop monitoring; (4) it significantly beats the
+baselines; (5) ablations show each component matters. The two headline results are: **framework
+vs LLM-only vs VLA** (we win on clarification / safety / success) and **ablations**
+(open-loop vs closed-loop, with/without shield, with/without grounding).
 
 ## The problem
 
@@ -107,9 +115,21 @@ LabMate/
 └── ...          # logs, scripts, experiments (planned)
 ```
 
-## Documents in this folder
+## Documents in this folder (read in order)
 
-- `README.md` — this overview (start here).
+| Doc | Contents |
+|-----|----------|
+| `README.md` | This overview — start here. |
+| `01_architecture.md` | System pipeline, the unified planning loop, how the 4 baselines are configs of one loop, module boundaries, data flow. |
+| `02_schema.md` | Data structures: instruction schema, episode/annotation schema, eval-function (propositions/constraints), ambiguity types. |
+| `03_skills.md` | Skill registry / DSL: the 8 skills with preconditions, effects, success conditions; mapping to LabUtopia controllers. |
+| `04_planners.md` | The 4 planner baselines (rule, LLM-only, scene-grounded, SayCan-style) as one loop; scoring; deterministic affordance. |
+| `05_safety.md` | Safety component: RoboGuard-style shield, 4-tier decisions, executable rules grounded in sim object flags. |
+| `06_clarification.md` | Clarification component: 4-token router, ambiguity taxonomy, when-to-ask; joint with safety. |
+| `07_evaluation.md` | Metric definitions and how each is computed; the two headline experiments. |
+| `08_labutopia_integration.md` | What LabUtopia already provides vs what to build; concrete hooks (controllers, ObjectUtils, factories, language field). |
+| `09_roadmap.md` | The MVP build plan (weeks), deliverables, scope guardrails. |
+| `references.md` | Pointers to prior work (arXiv links; no PDFs). |
 
-> More implementation specs (annotation schema spec, skill-registry spec, planner
-> interfaces, evaluator/metrics spec) will be added here as they are written.
+> These specs are derived from the research notes (kept locally outside this repo) and are the
+> canonical source for implementation. If code and spec disagree, fix one deliberately.
