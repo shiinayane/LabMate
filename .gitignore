@@ -1,14 +1,34 @@
-# The LabMate remote (git@github.com:shiinayane/LabMate.git) tracks ONLY the docs/ folder.
+# LabMate code repository (git@github.com:shiinayane/LabMate.git)
+# Normal code-repo gitignore: track everything (docs/, src/, configs/, README ...)
+# except OS cruft, Python/ML artifacts, and large binaries.
 #
-# Layout of this git root (Docs/):
-#   docs/      -> pushed to GitHub (LabMate implementation docs)
-#   research/  -> local-only research notes, archive, application analysis (NEVER pushed)
-#
-# Allowlist strategy: ignore everything, then re-include docs/ only. Anything new dropped
-# at the root is ignored by default, so local material can never be pushed by accident.
-/*
-!/.gitignore
-!/docs/
+# Research notes, papers (References/), proposals and submissions live OUTSIDE this
+# repo as sibling folders in the workspace and are never part of it.
 
-# OS cruft (also inside docs/)
+# OS / editor
 .DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# ML / run artifacts
+outputs/
+logs/
+wandb/
+*.ckpt
+*.pth
+*.h5
+
+# Large binaries — papers/PDFs must not enter the repo (copyright + size).
+# Keep design docs as markdown; cite papers via arXiv links in docs/references.md.
+*.pdf
+data/
+assets/*.usd
