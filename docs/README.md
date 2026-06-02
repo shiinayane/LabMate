@@ -105,15 +105,12 @@ unsafe-action rejection · false refusal rate · skill execution success · reco
 - VLA backends (OpenVLA / Octo / pi0) are an **optional** atomic-skill baseline, not core;
   keep the remote-inference hook but defer until the HRC protocol is stable.
 
-## Planned repo layout (as code is added)
+## Repo layout
 
-```
-LabMate/
-├── docs/        # this folder — design reference (current)
-├── src/         # LabMate framework: parser, scene graph, skill registry, planners, evaluator (planned)
-├── configs/     # task suite + annotation schema (planned)
-└── ...          # logs, scripts, experiments (planned)
-```
+The full skeleton already exists: `src/labmate/` (framework), `benchmark/` (the benchmark data),
+`configs/`, `scripts/`, `tests/`. Empty modules carry a docstring pointing at the spec that defines
+them. See **`10_repo_layout.md`** for the authoritative map and conventions (notably: code vs data
+separation, and the LabUtopia dependency isolated behind `src/labmate/labutopia/`).
 
 ## Documents in this folder (read in order)
 
@@ -129,6 +126,7 @@ LabMate/
 | `07_evaluation.md` | Metric definitions and how each is computed; the two headline experiments. |
 | `08_labutopia_integration.md` | What LabUtopia already provides vs what to build; concrete hooks (controllers, ObjectUtils, factories, language field). |
 | `09_roadmap.md` | The MVP build plan (weeks), deliverables, scope guardrails. |
+| `10_repo_layout.md` | Authoritative repository layout (framework `src/` vs benchmark data; conventions). |
 | `references.md` | Pointers to prior work (arXiv links; no PDFs). |
 
 > These specs are derived from the research notes (kept locally outside this repo) and are the
