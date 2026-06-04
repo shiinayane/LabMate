@@ -66,6 +66,10 @@ dev = ["pytest", "ruff"]
 # across indexes), which is how the known-good venv was built.
 # ---------------------------------------------------------------------------
 [tool.uv]
+# Runtime is managed by mise (see ./mise.toml -> python 3.11), NOT by uv. uv only
+# manages packages: use the interpreter mise puts on PATH and never download its own.
+python-preference = "only-system"
+python-downloads = "never"
 index-strategy = "unsafe-best-match"
 # Only ever resolve/lock for this machine's platform (GB10 / aarch64 Linux).
 # Without this, uv also solves a macOS/x86 split that has no isaacsim wheels.

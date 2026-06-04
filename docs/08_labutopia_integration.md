@@ -50,15 +50,22 @@ in the episode (02) and read back from sim — no perception needed.
 
 ## Env / runtime
 
-**One environment, managed natively by `uv` (no conda, no manual `source`).** A single project-local
-`.venv` holds Isaac Sim + LabUtopia + LabMate, declared in `pyproject.toml` and locked in `uv.lock`.
-Bring-up is fully declarative: `uv sync`, then run via `uv run` / `./scripts/labrun`.
+**Split ownership: `mise` manages the runtime, `uv` manages packages.** A single project-local `.venv`
+holds Isaac Sim + LabUtopia + LabMate; `uv.lock` pins packages; `mise.toml` pins the interpreter. No
+conda, no manual `source`. Default shell is **zsh**.
+
+- `./mise.toml` → `[tools] python = "3.11"`. mise installs a cpython-standalone 3.11 (ABI-identical to
+  the builds uv uses, so isaacsim's cp311 wheels are fine) and exposes it on PATH. This overrides the
+  global mise config's `python = "3.13"` only inside this project.
+- `[tool.uv]` `python-preference = "only-system"` + `python-downloads = "never"` make uv build the
+  `.venv` from **mise's** python and never fetch its own. (There is no `.python-version`; mise.toml is
+  the single runtime source.)
 
 > **This machine is aarch64 (NVIDIA GB10 / DGX Spark), CUDA 13.** LabUtopia's README targets x86 +
 > CUDA 12.6; the *actual* working build here is **torch `2.9.0+cu130`** (not cu126). All versions below
 > reproduce the known-good ARM venv (isaacsim `5.1.0.0`, numpy `1.26.0`).
 
-Key `pyproject.toml` wiring (already in place):
+Other key `pyproject.toml` wiring:
 - `requires-python = ">=3.11,<3.12"` — Isaac Sim 5.1 ships cp311 wheels only.
 - `[[tool.uv.index]]` **pytorch-cu130** (`download.pytorch.org/whl/cu130`, `explicit`) bound to the
   torch trio via `[tool.uv.sources]`; **nvidia** (`pypi.nvidia.com`) for isaacsim + its sub-pkgs.
@@ -69,15 +76,24 @@ Key `pyproject.toml` wiring (already in place):
   fine at runtime, as the original venv proved).
 
 ```bash
-uv sync                                   # build/lock the unified .venv (wheels come from uv cache)
-./scripts/labrun python scripts/run_episode.py ...      # no source needed
+mise install            # ensure the project's python 3.11 is present (reads ./mise.toml)
+uv sync                 # build the .venv from mise's python (wheels come from uv cache)
+uv run python ...       # just works in zsh — see env injection below
 ```
 
-**Isaac Sim runtime env (handled by `scripts/labrun`, required on this box):**
+**Isaac Sim runtime env (required on this box).** mise here runs in **shims mode** (`mise activate
+--shims`), which does *not* support mise `[env]` auto-vars, so the two Isaac Sim env bits are injected
+another way:
 - `LD_PRELOAD=/lib/aarch64-linux-gnu/libgomp.so.1` — **required**; without it isaacsim aborts at
   import ("shared libraries must be loaded before others").
 - `OMNI_KIT_ACCEPT_EULA=YES` — accept the Omniverse EULA non-interactively (first kit bootstrap
   otherwise blocks on a Yes/No prompt and dies on EOF).
+
+These live in the gitignored repo-root `.env`. A `uv()` wrapper in `~/.config/zsh/90-local.zsh` makes
+plain **`uv run`** auto-load that `.env` (it walks up from cwd, sets `UV_ENV_FILE`) — so inside the repo
+(and `src/labutopia/`) `uv run …` injects them with zero ceremony, and other projects are unaffected.
+`scripts/labrun` is the tracked, shell-independent fallback (cron / non-interactive: it exports both
+vars then calls `uv run`).
 
 **LabUtopia placement:** cloned into `src/labutopia/` (gitignored — *not* vendored/forked) and put on
 `sys.path` via `.venv/.../site-packages/_labutopia_path.pth`. It is a PYTHONPATH-style repo (no
@@ -86,4 +102,5 @@ packaging metadata; top-level `controllers/ factories/ tasks/ utils/ robots/ pol
 functions) so `import labmate` and unit tests still work if the sim isn't present. The optional remote
 VLA client lives at `src/labutopia/packages/openpi-client` (its own pyproject; install on demand).
 
-> Re-run `uv sync` and recreate `_labutopia_path.pth` if the `.venv` is ever rebuilt.
+> If the `.venv` is ever rebuilt (`rm -rf .venv && uv sync`), recreate `_labutopia_path.pth`
+> (one line: the absolute path to `src/labutopia`).
