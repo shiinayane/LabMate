@@ -56,6 +56,11 @@ dependencies = [
     # LLM client is provider-agnostic; add the SDK you use, e.g. "openai" / "anthropic".
 ]
 
+[project.optional-dependencies]
+# LLM backend for the llm_only/scene_grounded/saycan baselines. Optional + lazy-imported so the
+# sim-free tests and the rule baseline need neither the SDK nor a key. Install: uv sync --extra llm
+llm = ["anthropic>=0.40"]
+
 [dependency-groups]
 dev = ["pytest", "ruff"]
 

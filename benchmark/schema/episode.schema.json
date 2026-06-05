@@ -1,0 +1,378 @@
+{
+  "$defs": {
+    "Constraint": {
+      "properties": {
+        "type": {
+          "enum": [
+            "temporal",
+            "same_arg",
+            "terminal"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "order": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Order"
+        },
+        "props": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Props"
+        },
+        "arg": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arg"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "Constraint",
+      "type": "object"
+    },
+    "Dependency": {
+      "properties": {
+        "prop": {
+          "title": "Prop",
+          "type": "integer"
+        },
+        "depends_on": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Depends On",
+          "type": "array"
+        }
+      },
+      "required": [
+        "prop"
+      ],
+      "title": "Dependency",
+      "type": "object"
+    },
+    "EvalFunction": {
+      "description": "PARTNR-style programmatic eval, evaluated over the sim-state trace (docs/02, 07).",
+      "properties": {
+        "propositions": {
+          "items": {
+            "$ref": "#/$defs/Proposition"
+          },
+          "title": "Propositions",
+          "type": "array"
+        },
+        "dependencies": {
+          "items": {
+            "$ref": "#/$defs/Dependency"
+          },
+          "title": "Dependencies",
+          "type": "array"
+        },
+        "constraints": {
+          "items": {
+            "$ref": "#/$defs/Constraint"
+          },
+          "title": "Constraints",
+          "type": "array"
+        }
+      },
+      "title": "EvalFunction",
+      "type": "object"
+    },
+    "InstructionSchema": {
+      "additionalProperties": false,
+      "description": "Structured form of a natural-language instruction. Field names are normative (docs/02).",
+      "properties": {
+        "intent": {
+          "title": "Intent",
+          "type": "string"
+        },
+        "object_category": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Object Category"
+        },
+        "object_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Object Ref"
+        },
+        "quantity": {
+          "default": 1,
+          "title": "Quantity",
+          "type": "integer"
+        },
+        "destination": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Destination"
+        },
+        "missing_slots": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Missing Slots",
+          "type": "array"
+        },
+        "safety_flag": {
+          "default": false,
+          "title": "Safety Flag",
+          "type": "boolean"
+        },
+        "expected_skill_sequence": {
+          "items": {
+            "$ref": "#/$defs/SkillCall"
+          },
+          "title": "Expected Skill Sequence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "intent"
+      ],
+      "title": "InstructionSchema",
+      "type": "object"
+    },
+    "Proposition": {
+      "properties": {
+        "pred": {
+          "title": "Pred",
+          "type": "string"
+        },
+        "args": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "title": "Args",
+          "type": "array"
+        }
+      },
+      "required": [
+        "pred"
+      ],
+      "title": "Proposition",
+      "type": "object"
+    },
+    "SkillCall": {
+      "description": "One step of an optional plan hint. Validated against the registry, never trusted.",
+      "properties": {
+        "skill": {
+          "title": "Skill",
+          "type": "string"
+        },
+        "args": {
+          "additionalProperties": true,
+          "title": "Args",
+          "type": "object"
+        }
+      },
+      "required": [
+        "skill"
+      ],
+      "title": "SkillCall",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "episode_id": {
+      "title": "Episode Id",
+      "type": "string"
+    },
+    "scene": {
+      "title": "Scene",
+      "type": "string"
+    },
+    "init_overrides": {
+      "additionalProperties": true,
+      "title": "Init Overrides",
+      "type": "object"
+    },
+    "instruction": {
+      "title": "Instruction",
+      "type": "string"
+    },
+    "unambiguous_counterpart": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Unambiguous Counterpart"
+    },
+    "task_type": {
+      "enum": [
+        "direct",
+        "reference",
+        "quantity",
+        "composite",
+        "ambiguous",
+        "unsafe",
+        "recovery"
+      ],
+      "title": "Task Type",
+      "type": "string"
+    },
+    "ambiguity_type": {
+      "default": "none",
+      "enum": [
+        "none",
+        "preferences",
+        "common_sense",
+        "safety"
+      ],
+      "title": "Ambiguity Type",
+      "type": "string"
+    },
+    "ambiguity_shortlist": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Ambiguity Shortlist",
+      "type": "array"
+    },
+    "clarifying_question": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Clarifying Question"
+    },
+    "answer": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Answer"
+    },
+    "user_intent": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "User Intent"
+    },
+    "gold_schema": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InstructionSchema"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "required_decision": {
+      "default": "ACT",
+      "enum": [
+        "ACT",
+        "ASK",
+        "REFUSE"
+      ],
+      "title": "Required Decision",
+      "type": "string"
+    },
+    "safety_tier": {
+      "default": "S0",
+      "enum": [
+        "S0",
+        "S1",
+        "S2",
+        "S3"
+      ],
+      "title": "Safety Tier",
+      "type": "string"
+    },
+    "eval_function": {
+      "$ref": "#/$defs/EvalFunction"
+    }
+  },
+  "required": [
+    "episode_id",
+    "scene",
+    "instruction",
+    "task_type"
+  ],
+  "title": "Episode",
+  "type": "object"
+}

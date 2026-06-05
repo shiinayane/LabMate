@@ -1,0 +1,8 @@
+# rule baseline — template match, no LLM. Affordance ON, closed-loop monitor ON.
+name: rule
+propose: rule
+affordance: true
+clarification: true     # W1 stub (no-op); real router in W3
+safety: true            # W1 stub (no-op); real shield in W3
+monitor: true
+max_steps: 8

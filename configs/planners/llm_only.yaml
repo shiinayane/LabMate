@@ -1,0 +1,14 @@
+# llm_only baseline — the LLM scores fixed candidate strings. Affordance OFF, monitor OFF
+# (open-loop), no shield/router. Kept faithful so it stays the failure baseline (docs/04, 07).
+name: llm_only
+propose: llm_only
+alpha: 1.0
+beta: 0.0
+affordance: false
+clarification: false
+safety: false
+monitor: false
+max_steps: 8
+llm:
+  model: claude-opus-4-8
+  temperature: 0.0

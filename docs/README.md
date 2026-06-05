@@ -127,6 +127,7 @@ separation, and the LabUtopia dependency isolated behind `src/labmate/labutopia/
 | `08_labutopia_integration.md` | What LabUtopia already provides vs what to build; concrete hooks (controllers, ObjectUtils, factories, language field). |
 | `09_roadmap.md` | The MVP build plan (weeks), deliverables, scope guardrails. |
 | `10_repo_layout.md` | Authoritative repository layout (framework `src/` vs benchmark data; conventions). |
+| `11_implementation.md` | **Living doc:** implementation status + code map (design → files), how to run, decisions, gotchas. Update each week. |
 | `references.md` | Pointers to prior work (arXiv links; no PDFs). |
 
 > These specs are derived from the research notes (kept locally outside this repo) and are the

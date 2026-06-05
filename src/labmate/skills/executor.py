@@ -1,1 +1,49 @@
-"""Execute a skill via a LabUtopia controller. See docs/03 & 08."""
+"""Execute a skill via a LabUtopia controller (docs/03, 08).
+
+``SimBackend`` implements the loop's ``Backend`` protocol on top of a ``SimSession``: it drives the
+scripted controller, then reports the post-state. Object **poses** come from sim GT each call;
+**held / relations** are tracked symbolically (updated by the skill's ``effects`` on success),
+because LabUtopia exposes no gripper-held flag — a W1 simplification (geometric held-check is W2).
+"""
+
+from __future__ import annotations
+
+from ..scene.scene_graph import SceneGraph
+from .registry import Candidate
+
+
+def run(skill, args: dict, session) -> bool:
+    """docs/03 executor contract: drive the controller, return ``ok and skill.success(sg)``."""
+    raw_ok = session.run_skill()
+    sg = session.build_scene_graph(held=args.get("target") if raw_ok else None)
+    return raw_ok and bool(skill.success(args, sg))
+
+
+class SimBackend:
+    """Backend protocol over a live SimSession (Isaac Sim is reached only via the adapter)."""
+
+    _REL_KEYS = ("is_in", "is_on", "near")
+
+    def __init__(self, session):
+        self.session = session
+        self._held = None
+        self._relations: dict[str, set[tuple[str, str]]] = {k: set() for k in self._REL_KEYS}
+
+    def scene_graph(self) -> SceneGraph:
+        sg = self.session.build_scene_graph(held=self._held)
+        for rel, edges in self._relations.items():
+            sg.relations.setdefault(rel, set()).update(edges)
+        return sg
+
+    def execute(self, candidate: Candidate) -> bool:
+        raw_ok = self.session.run_skill()
+        if raw_ok:
+            # fold the skill's symbolic effects into the tracked state (held / relations)
+            tmp = self.scene_graph()
+            for eff in candidate.skill.effects:
+                eff(candidate.args, tmp)
+            self._held = tmp.held
+            for rel in self._relations:
+                self._relations[rel] = set(tmp.relations.get(rel, set()))
+        sg = self.scene_graph()
+        return raw_ok and bool(candidate.skill.success(candidate.args, sg))

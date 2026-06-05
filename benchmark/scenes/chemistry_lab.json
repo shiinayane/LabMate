@@ -1,0 +1,13 @@
+{
+  "scene": "chemistry_lab",
+  "usd": "assets/chemistry_lab/lab_001/lab_001.usd",
+  "labutopia_config": "level1_pick",
+  "robot": "franka",
+  "objects": {
+    "/World/conical_bottle02": {
+      "name": "conical_bottle02",
+      "category": "conical_flask",
+      "flags": {"is_graspable": true, "is_fragile": true}
+    }
+  }
+}

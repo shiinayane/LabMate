@@ -2,6 +2,13 @@
 
 All data structures are JSON-serializable. Field names below are normative.
 
+> **Implementation note (W1):** these are implemented as **pydantic v2** models
+> (`src/labmate/schema/`), not stdlib dataclasses. The env ships pydantic 2.11.10 and Isaac Sim
+> coexists with it, so the earlier "dataclasses to avoid a pydantic-v1 pin" concern is moot. The
+> benchmark JSON Schema (`benchmark/schema/episode.schema.json`) is **exported** from
+> `Episode.model_json_schema()`, so code and schema never drift. (`Skill` in docs/03 stays a plain
+> dataclass — it holds callables, not data.)
+
 ## Instruction schema (parser output)
 
 The parser maps a typed instruction to this record. The LLM must emit **only** this schema
