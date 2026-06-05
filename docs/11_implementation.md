@@ -87,6 +87,12 @@ Env injection (`LD_PRELOAD`, EULA) is automatic under the user's zsh `uv run` �
   resolution yet → W2.
 - **Clarification + safety gates are no-op stubs** (interfaces final) → W3.
 - **One runnable episode**; reference/quantity/ambiguous/unsafe/recovery seeds need W2/W3 machinery.
+- **`SimSession` is one-skill-per-process.** `run_skill` reuses LabUtopia's collect-mode controller
+  whose `episode_count` is cumulative, so calling it repeatedly in one process is messy. The `rule`
+  baseline executes one skill (clean); `llm_only` is open-loop (monitor OFF) so it re-proposes the
+  same pick up to `max_steps` — verified live (Claude parses + scores, success=1, but 8 ACT decisions
+  = the "extraneous effort" the framework should beat). A proper multi-skill **sequence executor** is
+  W3; it should also give `llm_only` an LLM "done" signal so the open-loop baseline terminates.
 
 ## Gotchas
 

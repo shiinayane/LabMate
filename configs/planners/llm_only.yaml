@@ -10,5 +10,5 @@ safety: false
 monitor: false
 max_steps: 8
 llm:
-  model: claude-opus-4-8
+  model: claude-haiku-4-5
   temperature: 0.0
