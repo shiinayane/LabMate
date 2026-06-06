@@ -62,6 +62,7 @@ class Episode(BaseModel):
     user_intent: Optional[str] = None            # keyword set: | synonyms, - forbidden
 
     gold_schema: Optional[InstructionSchema] = None
+    gold_target: Optional[str] = None            # object the referring expression should resolve to
     required_decision: Decision = "ACT"          # correct first gate output
     safety_tier: SafetyTier = "S0"
 

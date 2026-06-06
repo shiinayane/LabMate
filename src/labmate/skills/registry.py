@@ -9,7 +9,9 @@ the registry + scene graph (rather than free-generating) is what guarantees plan
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Optional
 
+from ..scene import grounding
 from ..scene.scene_graph import SceneGraph
 from ..schema.instruction import InstructionSchema
 from .definitions import SKILLS, Skill
@@ -51,16 +53,18 @@ def _matching_objects(schema: InstructionSchema, sg: SceneGraph) -> list[str]:
     return list(sg.objects.keys())
 
 
-def ground_skill(skill_name: str, schema: InstructionSchema, sg: SceneGraph) -> list[Candidate]:
+def ground_skill(skill_name: str, schema: InstructionSchema, sg: SceneGraph,
+                 object_names: Optional[list[str]] = None) -> list[Candidate]:
     """Ground one named skill against the schema + scene graph into concrete candidate(s).
 
-    One candidate per scene object matching the schema's ``object_category`` (W1 grounding;
-    referring-expression resolution is W2). Skills with no object arg yield a single candidate.
+    One candidate per object in ``object_names`` (W2 grounded path) or, if omitted, per scene object
+    matching the schema's ``object_category`` (W1 category-only path). Skills with no object arg
+    yield a single candidate.
     """
     if skill_name not in SKILLS:
         return []
     skill = SKILLS[skill_name]
-    objs = _matching_objects(schema, sg)
+    objs = object_names if object_names is not None else _matching_objects(schema, sg)
     obj_key = next((k for k in skill.args_spec if k in _OBJECT_ARGS), None)
 
     cands: list[Candidate] = []
@@ -84,8 +88,31 @@ def enumerate_candidates(schema: InstructionSchema, sg: SceneGraph) -> list[Cand
     W1 supports the primitive intents directly. ``bring``/``composite`` are decomposed by the
     planner (docs/03), not here; for those we fall back to the leading primitive (``pick``).
     """
-    intent = schema.intent
-    skill_name = intent if intent in SKILLS else ("pick" if intent in {"bring", "composite"} else None)
+    skill_name = _intent_to_skill(schema.intent)
     if skill_name is None:
         return []
     return ground_skill(skill_name, schema, sg)
+
+
+def _intent_to_skill(intent: str) -> Optional[str]:
+    if intent in SKILLS:
+        return intent
+    if intent in {"bring", "composite"}:
+        return "pick"
+    return None
+
+
+def enumerate_grounded(schema: InstructionSchema, sg: SceneGraph) -> list[Candidate]:
+    """Grounded candidates: bind the skill's object to the referring-expression resolution (W2).
+
+    Uses the deterministic resolver (``scene.grounding``) to choose which scene object(s) the
+    instruction refers to, instead of every object of the category. The resolver's ranked candidate
+    list is preserved so the gate's score/affordance can still pick among an ambiguous set.
+    """
+    skill_name = _intent_to_skill(schema.intent)
+    if skill_name is None:
+        return []
+    names = grounding.resolve(schema, sg).candidates
+    if not names:
+        return []
+    return ground_skill(skill_name, schema, sg, object_names=names)

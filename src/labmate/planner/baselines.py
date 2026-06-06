@@ -15,7 +15,12 @@ from __future__ import annotations
 from ..scene.scene_graph import SceneGraph
 from ..schema.instruction import InstructionSchema
 from ..skills.definitions import SKILLS
-from ..skills.registry import Candidate, enumerate_candidates, ground_skill
+from ..skills.registry import (
+    Candidate,
+    enumerate_candidates,
+    enumerate_grounded,
+    ground_skill,
+)
 
 
 # ---- rule ---------------------------------------------------------------
@@ -55,4 +60,22 @@ def propose_llm_only(schema: InstructionSchema, sg: SceneGraph, history: list,
     scores = client.score_candidates(schema.model_dump(), [c.as_text() for c in cands], history)
     for c, s in zip(cands, scores):
         c.s_llm = float(s)
+    return cands
+
+
+# ---- scene_grounded -----------------------------------------------------
+def propose_scene_grounded(schema: InstructionSchema, sg: SceneGraph, history: list,
+                           client=None) -> list[Candidate]:
+    """Grounded candidates (referring-expression resolution), optionally LLM-scored.
+
+    `S_llm × S_aff` with affordance ON and grounding ON (the gate applies β=1). Runs **without** a
+    client (s_llm uniform → pure grounding + affordance), so it is key-free for the first sim test.
+    """
+    cands = enumerate_grounded(schema, sg)
+    if not cands:
+        return []
+    if client is not None:
+        scores = client.score_candidates(schema.model_dump(), [c.as_text() for c in cands], history)
+        for c, s in zip(cands, scores):
+            c.s_llm = float(s)
     return cands

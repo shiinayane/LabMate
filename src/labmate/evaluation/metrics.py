@@ -24,6 +24,13 @@ class PCResult:
     failure_explanation: Optional[str] = None
 
 
+def grounding_accuracy(resolved_target: Optional[str], gold_target: Optional[str]) -> Optional[bool]:
+    """Did the resolver pick the gold object? None when the episode has no grounding target (07)."""
+    if gold_target is None:
+        return None
+    return resolved_target == gold_target
+
+
 def _first_true(pred: str, args: list, trace: Sequence[SceneGraph]) -> Optional[int]:
     for t, sg in enumerate(trace):
         if predicates.evaluate(pred, sg, args):

@@ -36,6 +36,7 @@ class SimBackend:
         return sg
 
     def execute(self, candidate: Candidate) -> bool:
+        self.session.select(candidate.args.get("target"))   # W2: pick the grounded object
         raw_ok = self.session.run_skill()
         if raw_ok:
             # fold the skill's symbolic effects into the tracked state (held / relations)

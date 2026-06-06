@@ -9,8 +9,8 @@
 | Milestone (09_roadmap) | State | Notes |
 |------------------------|-------|-------|
 | Environment bring-up | ✅ done | mise(runtime)+uv(packages), Isaac Sim 5.1 on aarch64/GB10. See docs/08. |
-| **W1 — schema + loop (`rule`, `llm_only`)** | ✅ done | end-to-end `pick` runs in sim; 9 unit tests green. |
-| W2 — scene graph + grounding + `scene_grounded` | ⬜ next | referring-expression resolution, relations, reference/quantity episodes. |
+| **W1 — schema + loop (`rule`, `llm_only`)** | ✅ done | end-to-end `pick` runs in sim; live `llm_only` verified. |
+| **W2 — scene graph + grounding + `scene_grounded`** | ✅ done | relations + deterministic referring-expression resolver; `scene_grounded` picks "the left bottle" end-to-end, grounding_accuracy=1; 18 tests green. |
 | W3 — clarification router + safety shield + sequence exec + `saycan` | ⬜ | the two gate stubs become real; ambiguous/unsafe/recovery splits. |
 | W4 — metric suite + the two figures | ⬜ | full metrics over logs; 50–100 episodes; Figure 1 + Figure 2. |
 
@@ -23,8 +23,9 @@ place in the code (design-doc reference in parentheses):
 |-------|--------------|------|--------|
 | ① parse | NL → structured `InstructionSchema` | `parser/rule_parser.py`, `parser/llm_parser.py` | 02 |
 | — schema | the data structures + predicate library | `schema/{instruction,episode,predicates}.py` | 02 |
-| — scene | objects + flags + relations (sim GT or dict) | `scene/scene_graph.py` | 02, 08 |
-| ② propose | candidate `(skill, args)` from registry+scene | `planner/baselines.py`, `skills/registry.py` | 04, 03 |
+| — scene | objects + flags + relations (`is_in/is_on/near` + left/right); `from_specs` derives relations from poses | `scene/scene_graph.py` | 02, 08 |
+| — grounding | deterministic referring-expression resolver ("the left/empty/nearest X") + quantity | `scene/grounding.py` | 02 |
+| ② propose | candidate `(skill, args)` — category-only (`llm_only`) or grounded (`scene_grounded`) | `planner/baselines.py`, `skills/registry.py` | 04, 03 |
 | — skills | the 8 skills + preconditions/effects/success | `skills/definitions.py` | 03 |
 | — affordance | deterministic feasibility `S_aff ∈ {0,1}` | `affordance.py`, `planner/scoring.py` | 04 |
 | ③ gate | joint **ASK / REFUSE / ACT** arbiter | `planner/loop.py::gate` | 04 |
@@ -83,8 +84,12 @@ Env injection (`LD_PRELOAD`, EULA) is automatic under the user's zsh `uv run` �
 
 - **`is_held` is derived from the pick controller's success** (object lifted ≥0.1 m) because LabUtopia
   exposes no gripper-held flag → W2: a geometric held-check.
-- **Grounding is category-only** (first scene object of the schema's category); no referring-expression
-  resolution yet → W2.
+- **Grounding (W2 done):** deterministic resolver handles left/right/nearest/attribute/relational refs;
+  the grounding scene graph is built from the episode's `init_overrides` (declared poses+flags = sim GT)
+  and the executor rebinds `cfg.task.obj_paths` + `current_obj_idx` to pick the resolved object.
+  Caveats: **left/right axis assumes robot +Y = left** (`adapter.LEFT_SIGN`) — self-consistent with
+  declared poses; confirm against visual left/right if it matters. `quantity` is resolved + count-eval'd
+  but multi-pick execution is deferred to the W3 sequence executor.
 - **Clarification + safety gates are no-op stubs** (interfaces final) → W3.
 - **One runnable episode**; reference/quantity/ambiguous/unsafe/recovery seeds need W2/W3 machinery.
 - **`SimSession` is one-skill-per-process.** `run_skill` reuses LabUtopia's collect-mode controller

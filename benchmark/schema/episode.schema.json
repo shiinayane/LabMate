@@ -342,6 +342,18 @@
       ],
       "default": null
     },
+    "gold_target": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Gold Target"
+    },
     "required_decision": {
       "default": "ACT",
       "enum": [

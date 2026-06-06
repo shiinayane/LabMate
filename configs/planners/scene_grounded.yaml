@@ -1,0 +1,12 @@
+# scene_grounded baseline — S_llm × S_aff (alpha=1, beta=1). Grounding ON (referring-expression
+# resolution), affordance ON, closed-loop monitor ON. The first row that resembles the framework.
+# Runs key-free (deterministic grounding + affordance); LLM scoring is optional (add a client).
+name: scene_grounded
+propose: scene_grounded
+alpha: 1.0
+beta: 1.0
+affordance: true
+clarification: true     # W1 stub (no-op); real router in W3
+safety: true            # W1 stub (no-op); real shield in W3
+monitor: true
+max_steps: 8

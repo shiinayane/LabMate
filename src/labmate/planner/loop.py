@@ -20,9 +20,11 @@ import yaml
 
 from .. import affordance, monitor
 from ..clarification import router
+from ..evaluation.metrics import grounding_accuracy
 from ..safety import shield
 from ..schema.episode import Episode
 from ..schema.instruction import InstructionSchema
+from ..scene import grounding
 from ..scene.scene_graph import SceneGraph
 from ..skills.registry import Candidate
 from . import baselines, scoring
@@ -122,7 +124,9 @@ def _propose(schema, sg, history, cfg: PlannerConfig, client) -> list[Candidate]
         return baselines.propose_rule(schema, sg, history)
     if cfg.propose == "llm_only":
         return baselines.propose_llm_only(schema, sg, history, client)
-    raise NotImplementedError(f"propose={cfg.propose!r} arrives in W2 (scene_grounded/saycan)")
+    if cfg.propose == "scene_grounded":
+        return baselines.propose_scene_grounded(schema, sg, history, client)
+    raise NotImplementedError(f"propose={cfg.propose!r} arrives in W3 (saycan)")
 
 
 # ---- result -------------------------------------------------------------
@@ -139,6 +143,9 @@ class EpisodeResult:
     asked: bool = False
     reason: Optional[str] = None
     steps: int = 0
+    resolved_target: Optional[str] = None       # what grounding resolved the ref to
+    gold_target: Optional[str] = None
+    grounding_correct: Optional[bool] = None     # None when the episode has no grounding target
 
     def to_log(self) -> dict[str, Any]:
         return {
@@ -157,6 +164,9 @@ class EpisodeResult:
             "asked": self.asked,
             "reason": self.reason,
             "steps": self.steps,
+            "resolved_target": self.resolved_target,
+            "gold_target": self.gold_target,
+            "grounding_correct": self.grounding_correct,
         }
 
 
@@ -168,6 +178,11 @@ def run_episode(episode: Episode, cfg: PlannerConfig, backend: Backend, parser,
 
     trace: list[SceneGraph] = [backend.scene_graph().model_copy(deep=True)]
     history: list[tuple] = []
+
+    # grounding metric: resolve the referring expression against the initial scene (07)
+    result.resolved_target = grounding.resolve(schema, trace[0]).target
+    result.gold_target = episode.gold_target
+    result.grounding_correct = grounding_accuracy(result.resolved_target, episode.gold_target)
 
     for step in range(cfg.max_steps):
         result.steps = step + 1

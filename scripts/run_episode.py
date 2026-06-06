@@ -25,7 +25,9 @@ from labmate.schema.episode import Episode                 # noqa: E402
 
 
 def _parser_and_client(cfg: PlannerConfig):
-    if cfg.propose == "rule":
+    # rule + scene_grounded run key-free (deterministic parsing + grounding). Only llm_only needs
+    # the Anthropic client; scene_grounded can add LLM scoring later but defaults to key-free.
+    if cfg.propose in ("rule", "scene_grounded"):
         return RuleParser(), None
     from labmate.llm.client import default_client          # lazy (optional dep)
     from labmate.parser.llm_parser import LLMParser
@@ -51,8 +53,13 @@ def main() -> None:
     from labmate.labutopia.adapter import SimSession
     from labmate.skills.executor import SimBackend
 
+    # W2: per-episode placed objects (poses + flags) come from init_overrides; fall back to the
+    # scene annotation map (W1). These drive grounding + dynamic target binding.
+    episode_objects = episode.init_overrides.get("objects") if episode.init_overrides else None
+
     run_dir = Path(args.out) / episode.episode_id
-    session = SimSession(scene_spec, run_dir=str(run_dir / "labutopia"), headless=args.headless).start()
+    session = SimSession(scene_spec, run_dir=str(run_dir / "labutopia"),
+                         headless=args.headless, objects=episode_objects).start()
     try:
         backend = SimBackend(session)
         result = run_episode(episode, cfg, backend, parser, client)

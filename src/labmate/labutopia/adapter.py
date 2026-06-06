@@ -17,23 +17,34 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from ..scene.scene_graph import ObjectFlags, SceneGraph, SceneObject
+from ..scene.scene_graph import SceneGraph
 
 # src/labutopia (sibling of src/labmate); also on sys.path via the venv .pth, set here defensively.
 LABUTOPIA_DIR = Path(__file__).resolve().parents[2] / "labutopia"
+
+# Which world axis (and sign) is the robot's LEFT. +1 => larger y = left (assumed Franka convention).
+# VERIFY on the first multi-object run and flip if needed (see docs/11 / W2 plan risks).
+LEFT_SIGN = 1
 
 
 class SimSession:
     """Owns the Isaac Sim lifecycle + a LabUtopia task/controller for one scene.
 
     Create once per process (SimulationApp is a singleton). ``scene_spec`` is the parsed
-    ``benchmark/scenes/<scene>.json``.
+    ``benchmark/scenes/<scene>.json``; ``objects`` is the per-episode object list (name, usd_path,
+    category, pose, flags) — from the episode's ``init_overrides`` (W2) or derived from the scene map
+    (W1). Objects with an explicit ``pose`` are placed there (degenerate position_range) and become
+    selectable pick targets via ``select``.
     """
 
-    def __init__(self, scene_spec: dict, run_dir: str, headless: bool = True):
+    def __init__(self, scene_spec: dict, run_dir: str, headless: bool = True,
+                 objects: Optional[list[dict]] = None):
         self.scene_spec = scene_spec
         self.run_dir = run_dir
         self.headless = headless
+        self.objects = objects if objects is not None else self._objects_from_scene_spec(scene_spec)
+        self.robot_xy = [0.0, 0.0]
+        self._index_by_name: dict[str, int] = {}
         self._app = None
         self._world = None
         self._robot = None
@@ -42,6 +53,14 @@ class SimSession:
         self._controller = None
         self._objutils = None
         self._cfg = None
+
+    @staticmethod
+    def _objects_from_scene_spec(scene_spec: dict) -> list[dict]:
+        return [
+            {"name": meta["name"], "usd_path": usd, "category": meta["category"],
+             "flags": meta.get("flags", {}), "pose": meta.get("pose")}
+            for usd, meta in scene_spec.get("objects", {}).items()
+        ]
 
     # ---- lifecycle ------------------------------------------------------
     def start(self) -> "SimSession":
@@ -72,6 +91,20 @@ class SimSession:
         cfg.max_episodes = 1
         cfg.multi_run.run_dir = self.run_dir          # concrete path: avoids hydra ${now:} resolver
         os.makedirs(self.run_dir, exist_ok=True)
+        self.robot_xy = [float(cfg.robot.position[0]), float(cfg.robot.position[1])]
+
+        # W2: rebind the task's objects to this episode's placed objects (degenerate position_range =
+        # fixed pose). The candidate order defines current_obj_idx, used by select() to pick a target.
+        placed = [o for o in self.objects if o.get("pose") and o.get("usd_path")]
+        if placed:
+            cfg.task.obj_paths = [
+                {"path": o["usd_path"],
+                 "position_range": {"x": [o["pose"][0]] * 2,
+                                    "y": [o["pose"][1]] * 2,
+                                    "z": [o["pose"][2]] * 2}}
+                for o in placed
+            ]
+            self._index_by_name = {o["name"]: i for i, o in enumerate(placed)}
         self._cfg = cfg
 
         self._world = World(stage_units_in_meters=1.0, physics_prim_path="/physicsScene", backend="numpy")
@@ -129,21 +162,37 @@ class SimSession:
                 continue
         return last_success
 
+    def select(self, target_name: Optional[str]) -> None:
+        """Point the task at the object the planner grounded to (W2 multi-object pick)."""
+        if self._task is None or target_name is None:
+            return
+        idx = self._index_by_name.get(target_name)
+        if idx is not None:
+            self._task.current_obj_idx = idx
+
     # ---- scene graph ----------------------------------------------------
     def build_scene_graph(self, held: Optional[str] = None) -> SceneGraph:
-        """Construct the minimal scene graph from the annotation map + ObjectUtils positions."""
-        objects = []
-        for usd_path, meta in self.scene_spec.get("objects", {}).items():
-            pose = None
-            try:
-                pose = [float(x) for x in self._objutils.get_geometry_center(object_path=usd_path)]
-            except Exception:
-                pose = None
-            objects.append(SceneObject(
-                name=meta["name"],
-                category=meta["category"],
-                usd_path=usd_path,
-                pose=pose,
-                flags=ObjectFlags(**meta.get("flags", {})),
-            ))
-        return SceneGraph(objects={o.name: o for o in objects}, held=held)
+        """Build the scene graph from this episode's objects (poses + flags) — relations computed.
+
+        Poses come from the episode's ``init_overrides`` (declared GT, docs/08); if a spec has no
+        pose we query ``ObjectUtils`` live as a fallback. Relations + left/right derive from poses.
+        """
+        specs = []
+        for o in self.objects:
+            pose = o.get("pose")
+            if pose is None and o.get("usd_path") is not None:
+                try:
+                    pose = [float(x) for x in
+                            self._objutils.get_geometry_center(object_path=o["usd_path"])]
+                except Exception:
+                    pose = None
+            specs.append({
+                "name": o["name"],
+                "category": o["category"],
+                "usd_path": o.get("usd_path"),
+                "pose": list(pose) if pose is not None else None,
+                "size": o.get("size"),
+                "flags": o.get("flags", {}),
+            })
+        frame = {"robot_xy": self.robot_xy, "left_axis": "y", "left_sign": LEFT_SIGN}
+        return SceneGraph.from_specs(specs, frame=frame, held=held)

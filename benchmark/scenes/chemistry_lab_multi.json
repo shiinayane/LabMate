@@ -1,0 +1,7 @@
+{
+  "scene": "chemistry_lab_multi",
+  "usd": "assets/chemistry_lab/lab_001/lab_001.usd",
+  "labutopia_config": "level1_pick",
+  "robot": "franka",
+  "note": "Objects are supplied per-episode via init_overrides (placed + flagged). The base config provides the Franka, cameras and the pick task/controller; obj_paths are rebound at runtime."
+}

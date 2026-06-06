@@ -21,9 +21,19 @@ configs/     task suite + annotation schema       (added during development)
 
 ## Status
 
-Early development. `docs/` is the canonical design reference; code is added under `src/`.
-See **[docs/README.md](docs/README.md)** for the architecture, schema, planner baselines,
+Under active development. **Weeks 1–2 of the MVP are done**: the unified
+`NL → schema → propose → gate → execute → monitor` loop runs end-to-end on LabUtopia with the
+`rule`, `llm_only`, and `scene_grounded` baselines — including deterministic referring-expression
+grounding ("pick the *left* conical bottle") and an object-grounding-accuracy metric. Next: W3
+(clarification router + safety shield + sequence executor + SayCan-style planner).
+
+`docs/` is the canonical design reference; **[docs/11_implementation.md](docs/11_implementation.md)**
+is the living code-map / status doc (design → files, how to run, gotchas). Start at
+**[docs/README.md](docs/README.md)** for the full architecture, schema, planner baselines,
 safety/clarification design, evaluation metrics, and milestones.
+
+Quick start (env per docs/08): `uv run pytest` (sim-free tests); run one episode with
+`uv run python scripts/run_episode.py --episode benchmark/episodes/reference/pick_left_conical_bottle.json --planner configs/planners/scene_grounded.yaml --headless`.
 
 ## Note for contributors / coding agents
 
