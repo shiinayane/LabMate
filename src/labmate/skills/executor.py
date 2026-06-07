@@ -24,8 +24,10 @@ class SimBackend:
 
     _REL_KEYS = ("is_in", "is_on", "near")
 
-    def __init__(self, session):
+    def __init__(self, session, induce_failure: bool = False):
         self.session = session
+        self.induce_failure = induce_failure          # recovery split: fail the first execute
+        self._attempts = 0
         self._held = None
         self._relations: dict[str, set[tuple[str, str]]] = {k: set() for k in self._REL_KEYS}
 
@@ -36,8 +38,11 @@ class SimBackend:
         return sg
 
     def execute(self, candidate: Candidate) -> bool:
+        self._attempts += 1
+        if self.induce_failure and self._attempts == 1:
+            return False                              # induced first-attempt failure (no sim) -> retry
         self.session.select(candidate.args.get("target"))   # W2: pick the grounded object
-        raw_ok = self.session.run_skill()
+        raw_ok = self.session.run_skill(candidate.skill.controller)
         if raw_ok:
             # fold the skill's symbolic effects into the tracked state (held / relations)
             tmp = self.scene_graph()

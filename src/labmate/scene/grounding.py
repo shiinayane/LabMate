@@ -68,6 +68,11 @@ def resolve(schema: InstructionSchema, sg: SceneGraph) -> GroundingResult:
 
     text = (schema.object_ref or "").lower()
 
+    # direct name match wins (e.g. a clarification oracle answer that names the object)
+    for name in cands:
+        if name.lower() in text:
+            return GroundingResult(candidates=[name], target=name, ambiguous=False)
+
     # spatial: side
     for side in _SIDES:
         if side in text:

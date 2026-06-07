@@ -25,9 +25,9 @@ from labmate.schema.episode import Episode                 # noqa: E402
 
 
 def _parser_and_client(cfg: PlannerConfig):
-    # rule + scene_grounded run key-free (deterministic parsing + grounding). Only llm_only needs
-    # the Anthropic client; scene_grounded can add LLM scoring later but defaults to key-free.
-    if cfg.propose in ("rule", "scene_grounded"):
+    # rule + scene_grounded + saycan run key-free (deterministic parsing + grounding/router/shield).
+    # Only llm_only needs the Anthropic client; the framework rows add LLM scoring optionally later.
+    if cfg.propose in ("rule", "scene_grounded", "saycan"):
         return RuleParser(), None
     from labmate.llm.client import default_client          # lazy (optional dep)
     from labmate.parser.llm_parser import LLMParser
@@ -53,15 +53,17 @@ def main() -> None:
     from labmate.labutopia.adapter import SimSession
     from labmate.skills.executor import SimBackend
 
-    # W2: per-episode placed objects (poses + flags) come from init_overrides; fall back to the
-    # scene annotation map (W1). These drive grounding + dynamic target binding.
-    episode_objects = episode.init_overrides.get("objects") if episode.init_overrides else None
+    # W2/W3: per-episode placed objects (poses + flags) + scene-level hazard flags come from
+    # init_overrides; fall back to the scene annotation map (W1). These drive grounding + safety.
+    overrides = episode.init_overrides or {}
+    episode_objects = overrides.get("objects")
+    scene_flags = overrides.get("scene_flags")
 
     run_dir = Path(args.out) / episode.episode_id
-    session = SimSession(scene_spec, run_dir=str(run_dir / "labutopia"),
-                         headless=args.headless, objects=episode_objects).start()
+    session = SimSession(scene_spec, run_dir=str(run_dir / "labutopia"), headless=args.headless,
+                         objects=episode_objects, scene_flags=scene_flags).start()
     try:
-        backend = SimBackend(session)
+        backend = SimBackend(session, induce_failure=episode.induce_failure)
         result = run_episode(episode, cfg, backend, parser, client)
         # IMPORTANT: log + print BEFORE session.close() — SimulationApp.close() hard-exits the
         # process (fastShutdown), so anything after it never runs.
@@ -71,6 +73,12 @@ def main() -> None:
               f"success={result.success} pc={result.pc} steps={result.steps} "
               f"decision={result.decisions[0].kind if result.decisions else None}", flush=True)
         print(f">>> log: {log_path}", flush=True)
+    except Exception:
+        import traceback
+        # print BEFORE close(): SimulationApp.close() hard-exits and would swallow the traceback
+        traceback.print_exc()
+        sys.stdout.flush()
+        sys.stderr.flush()
     finally:
         session.close()
 

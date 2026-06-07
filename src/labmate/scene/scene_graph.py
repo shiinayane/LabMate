@@ -118,6 +118,7 @@ class SceneGraph(BaseModel):
     )
     held: Optional[str] = None
     frame: Optional[Frame] = None
+    scene_flags: set[str] = Field(default_factory=set)   # env hazards: spill / broken_glass / obstruction
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -140,11 +141,12 @@ class SceneGraph(BaseModel):
         for rel, edges in (data.get("relations") or {}).items():
             relations.setdefault(rel, set()).update(tuple(e) for e in edges)
         frame = Frame(**data["frame"]) if data.get("frame") else None
-        return cls(objects=objects, relations=relations, held=data.get("held"), frame=frame)
+        return cls(objects=objects, relations=relations, held=data.get("held"), frame=frame,
+                   scene_flags=set(data.get("scene_flags") or []))
 
     @classmethod
     def from_specs(cls, objects: list[dict], frame: Optional[dict] = None,
-                   held: Optional[str] = None) -> "SceneGraph":
+                   held: Optional[str] = None, scene_flags: Optional[list[str]] = None) -> "SceneGraph":
         """Build from object specs and COMPUTE relations from poses+sizes (W2; sim adapter).
 
         Each spec is the ``SceneObject`` dict (name/category/pose/size/flags/...). Relations
@@ -172,7 +174,8 @@ class SceneGraph(BaseModel):
                     if d < R_IN and bz is not None and bz <= za < btop:
                         rels["is_in"].add((a, b))
         f = Frame(**frame) if frame else None
-        return cls(objects=objs, relations=rels, held=held, frame=f)
+        return cls(objects=objs, relations=rels, held=held, frame=f,
+                   scene_flags=set(scene_flags or []))
 
     # ---- queries --------------------------------------------------------
     def get(self, name: str) -> Optional[SceneObject]:

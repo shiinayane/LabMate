@@ -38,11 +38,12 @@ class SimSession:
     """
 
     def __init__(self, scene_spec: dict, run_dir: str, headless: bool = True,
-                 objects: Optional[list[dict]] = None):
+                 objects: Optional[list[dict]] = None, scene_flags: Optional[list[str]] = None):
         self.scene_spec = scene_spec
         self.run_dir = run_dir
         self.headless = headless
         self.objects = objects if objects is not None else self._objects_from_scene_spec(scene_spec)
+        self.scene_flags = list(scene_flags or [])
         self.robot_xy = [0.0, 0.0]
         self._index_by_name: dict[str, int] = {}
         self._app = None
@@ -89,6 +90,7 @@ class SimSession:
 
         cfg = OmegaConf.load(str(LABUTOPIA_DIR / "config" / f"{self.scene_spec['labutopia_config']}.yaml"))
         cfg.max_episodes = 1
+        cfg.collector.type = "mock"                   # W3: executor drives the scripted FSM, no HDF5
         cfg.multi_run.run_dir = self.run_dir          # concrete path: avoids hydra ${now:} resolver
         os.makedirs(self.run_dir, exist_ok=True)
         self.robot_xy = [float(cfg.robot.position[0]), float(cfg.robot.position[1])]
@@ -115,7 +117,8 @@ class SimSession:
         )
         self._objutils = ObjectUtils.get_instance(self._stage)
         self._task = create_task(cfg.task_type, cfg=cfg, world=self._world, stage=self._stage, robot=self._robot)
-        self._controller = create_controller(cfg.controller_type, cfg=cfg, robot=self._robot)
+        # Controllers are created FRESH per skill in run_skill (their episode_count is cumulative, so
+        # one controller cannot be reused for a sequence/retry — Explore finding, docs/11).
         return self
 
     def close(self) -> None:
@@ -128,27 +131,24 @@ class SimSession:
             self._app.close()
 
     # ---- execution ------------------------------------------------------
-    def run_skill(self) -> bool:
-        """Drive the configured scripted controller for one episode; return its success.
+    def run_skill(self, controller_type: Optional[str] = None) -> bool:
+        """Drive ONE scripted skill to completion and return its success.
 
-        Mirrors LabUtopia ``main.py`` (sans cameras/video). One "episode" == one skill execution.
+        A **fresh controller is created per call** (its episode_count is cumulative, so a controller
+        can't be reused for a sequence/retry — Explore finding). `task.reset()` hands the robot back to
+        home between skills. Terminates on the controller's own `done`, NOT on episode_num — so this
+        works for multi-skill sequences and retries (W3).
         """
-        task, controller, world, robot, app = (
-            self._task, self._controller, self._world, self._robot, self._app
+        from factories.controller_factory import create_controller
+
+        cfg, task, world, robot, app = (
+            self._cfg, self._task, self._world, self._robot, self._app
         )
-        last_success = False
+        controller = create_controller(controller_type or cfg.controller_type, cfg=cfg, robot=robot)
         task.reset()
         while app.is_running():
             world.step(render=True)
-            if world.is_stopped():
-                controller.reset_needed = True
             if not world.is_playing():
-                continue
-            if controller.need_reset() or task.need_reset():
-                controller.reset()
-                if controller.episode_num() >= 1:
-                    break
-                task.reset()
                 continue
             state = task.step()
             if state is None:
@@ -157,10 +157,16 @@ class SimSession:
             if action is not None:
                 robot.get_articulation_controller().apply_action(action)
             if done:
-                last_success = bool(is_success)
-                task.on_task_complete(is_success)
-                continue
-        return last_success
+                try:
+                    task.on_task_complete(is_success)
+                except Exception:
+                    pass
+                try:
+                    controller.close()
+                except Exception:
+                    pass
+                return bool(is_success)
+        return False
 
     def select(self, target_name: Optional[str]) -> None:
         """Point the task at the object the planner grounded to (W2 multi-object pick)."""
@@ -195,4 +201,4 @@ class SimSession:
                 "flags": o.get("flags", {}),
             })
         frame = {"robot_xy": self.robot_xy, "left_axis": "y", "left_sign": LEFT_SIGN}
-        return SceneGraph.from_specs(specs, frame=frame, held=held)
+        return SceneGraph.from_specs(specs, frame=frame, held=held, scene_flags=self.scene_flags)

@@ -77,6 +77,13 @@ def _clear_held(args, sg):
     sg.held = None
 
 
+def _set_on(args, sg):
+    """Symbolic place effect: target now rests on/in its destination."""
+    dest = args.get("dest")
+    if dest:
+        sg.relations.setdefault("is_on", set()).add((args["target"], dest))
+
+
 def _set_open(key: str, val: bool) -> Effect:
     def e(args, sg):
         o = sg.get(args[key])
@@ -122,7 +129,7 @@ def _build() -> dict[str, Skill]:
             name="place",
             args_spec={"target": "object", "dest": "location"},
             preconditions=[holding("target"), present("dest")],
-            effects=[_clear_held],
+            effects=[_set_on, _clear_held],
             success=lambda args, sg: sg.has_relation("is_on", args["target"], args["dest"])
             or sg.has_relation("is_in", args["target"], args["dest"]),
             controller="place",

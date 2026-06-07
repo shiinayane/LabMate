@@ -10,8 +10,9 @@
 |------------------------|-------|-------|
 | Environment bring-up | ✅ done | mise(runtime)+uv(packages), Isaac Sim 5.1 on aarch64/GB10. See docs/08. |
 | **W1 — schema + loop (`rule`, `llm_only`)** | ✅ done | end-to-end `pick` runs in sim; live `llm_only` verified. |
-| **W2 — scene graph + grounding + `scene_grounded`** | ✅ done | relations + deterministic referring-expression resolver; `scene_grounded` picks "the left bottle" end-to-end, grounding_accuracy=1; 18 tests green. |
-| W3 — clarification router + safety shield + sequence exec + `saycan` | ⬜ | the two gate stubs become real; ambiguous/unsafe/recovery splits. |
+| **W2 — scene graph + grounding + `scene_grounded`** | ✅ done | relations + deterministic referring-expression resolver; `scene_grounded` picks "the left bottle" end-to-end, grounding_accuracy=1. |
+| **W3 — clarification + safety + sequence exec + `saycan`** | ✅ done | real shield (5-tier/8 rules), deterministic router, goal-directed `saycan` w/ retry, sequence executor (fresh controller/skill). Sim: unsafe→REFUSE (executed=0), recovery→retry→success; 25 tests green. |
+| W4 — metric aggregation + Figure 1/2 | ⬜ next | aggregate URR/FRR/Ask/recovery/grounding over 50–100 episodes; baseline-vs-framework + ablations. |
 | W4 — metric suite + the two figures | ⬜ | full metrics over logs; 50–100 episodes; Figure 1 + Figure 2. |
 
 ## The pipeline → code map
@@ -25,15 +26,16 @@ place in the code (design-doc reference in parentheses):
 | — schema | the data structures + predicate library | `schema/{instruction,episode,predicates}.py` | 02 |
 | — scene | objects + flags + relations (`is_in/is_on/near` + left/right); `from_specs` derives relations from poses | `scene/scene_graph.py` | 02, 08 |
 | — grounding | deterministic referring-expression resolver ("the left/empty/nearest X") + quantity | `scene/grounding.py` | 02 |
-| ② propose | candidate `(skill, args)` — category-only (`llm_only`) or grounded (`scene_grounded`) | `planner/baselines.py`, `skills/registry.py` | 04, 03 |
+| ② propose | candidate `(skill, args)` — category (`llm_only`), grounded (`scene_grounded`), or goal-directed (`saycan`) | `planner/baselines.py`, `skills/registry.py` | 04, 03 |
 | — skills | the 8 skills + preconditions/effects/success | `skills/definitions.py` | 03 |
-| — affordance | deterministic feasibility `S_aff ∈ {0,1}` | `affordance.py`, `planner/scoring.py` | 04 |
-| ③ gate | joint **ASK / REFUSE / ACT** arbiter | `planner/loop.py::gate` | 04 |
-| — clarify | ASK router (**W1 stub → False**) | `clarification/router.py` | 06 |
-| — safety | shield (**W1 stub → ALLOW**) | `safety/shield.py` | 05 |
-| ④ execute | drive a LabUtopia controller | `skills/executor.py` (`SimBackend`), `labutopia/adapter.py` | 03, 08 |
-| ⑤ monitor | success/PC from sim GT (stop condition) | `monitor.py`, `evaluation/metrics.py` | 01, 07 |
-| — log | structured per-episode JSONL | `episode_logger.py` | 01, 07 |
+| — affordance / goals | feasibility `S_aff∈{0,1}`; goal lookahead (planner belief, decoupled from eval) | `affordance.py`, `planner/{scoring,goals}.py` | 04 |
+| ③ gate | joint **ASK / REFUSE / ACT** arbiter (router → shield → affordance), per-stage attribution | `planner/loop.py::gate` | 04 |
+| — clarify | deterministic ACT/ASK/REFUSE router; ASK→oracle→resolve loop in `run_episode` | `clarification/router.py` | 06 |
+| — safety | RoboGuard-style shield: 5-tier verdict + 8 rules over object/scene flags | `safety/shield.py`, `safety/rules.py` | 05 |
+| ④ execute | drive a LabUtopia controller; **fresh controller per skill** (sequence/retry) | `skills/executor.py` (`SimBackend`), `labutopia/adapter.py` | 03, 08 |
+| ⑤ monitor | stop on goal lookahead; retry on failure (recovery/replan) | `monitor.py`, `planner/loop.py` | 01, 07 |
+| — metrics | PC + grounding-acc + URR/FRR/Ask-PR/recovery + attribution | `evaluation/metrics.py` | 07 |
+| — log | structured per-episode JSONL (decisions, tokens, attribution) | `episode_logger.py` | 01, 07 |
 | loop | ties it all together, 4 baselines = configs | `planner/loop.py::run_episode` | 01, 04 |
 | LLM seam | provider-agnostic client (Anthropic) | `llm/client.py` | 04 |
 
@@ -90,14 +92,23 @@ Env injection (`LD_PRELOAD`, EULA) is automatic under the user's zsh `uv run` �
   Caveats: **left/right axis assumes robot +Y = left** (`adapter.LEFT_SIGN`) — self-consistent with
   declared poses; confirm against visual left/right if it matters. `quantity` is resolved + count-eval'd
   but multi-pick execution is deferred to the W3 sequence executor.
-- **Clarification + safety gates are no-op stubs** (interfaces final) → W3.
-- **One runnable episode**; reference/quantity/ambiguous/unsafe/recovery seeds need W2/W3 machinery.
-- **`SimSession` is one-skill-per-process.** `run_skill` reuses LabUtopia's collect-mode controller
-  whose `episode_count` is cumulative, so calling it repeatedly in one process is messy. The `rule`
-  baseline executes one skill (clean); `llm_only` is open-loop (monitor OFF) so it re-proposes the
-  same pick up to `max_steps` — verified live (Claude parses + scores, success=1, but 8 ACT decisions
-  = the "extraneous effort" the framework should beat). A proper multi-skill **sequence executor** is
-  W3; it should also give `llm_only` an LLM "done" signal so the open-loop baseline terminates.
+- **Clarification + safety (W3 done):** real deterministic router (ACT/ASK/REFUSE + oracle loop) and
+  RoboGuard shield (5-tier, 8 rules). Both decide from schema+scene only (never gold fields).
+- **Sequence executor (W3 done):** `run_skill` now creates a **fresh controller per skill** (mock
+  collector, terminate on `done`), fixing the one-skill-per-process limit; multiple real skills /
+  retries work in one process (recovery verified in sim).
+
+## W3 simplifications to revisit (W4+)
+
+- **Recovery uses an induced-failure flag** (episode marks the first execute to fail) — a deterministic
+  stand-in for physical failure; the recover *loop* (saycan goal-directed retry) is the real thing.
+- **Sim sequence depth:** in sim we validated retry (induced-fail → 1 real pick) + REFUSE (0 executes).
+  Multi-real-skill sim sequences (e.g. pick→place via a place task, or the LabUtopia composites) are
+  unit-tested for the *logic* but full sim is a W4 item.
+- **Baseline configs for Figure 1:** `rule`/`llm_only` should run with the framework components OFF to
+  make the contrast fair (the framework = `scene_grounded`/`saycan` with router+shield ON). The
+  config toggles + the aggregation runner + plots are W4.
+- **`quantity`** is grounding + count-eval only; multi-object delivery execution is W4.
 
 ## Gotchas
 

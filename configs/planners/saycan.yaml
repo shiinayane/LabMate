@@ -1,0 +1,14 @@
+# saycan = the proposed framework: scene_grounded + goal-directed iterative propose + replan/retry.
+# Grounding + affordance + clarification + safety all ON, closed-loop monitor ON. Runs key-free
+# (deterministic grounding/router/shield); LLM scoring optional. This is the row that should beat
+# the baselines on clarification / safety / recovery / success (docs/07 Figure 1).
+name: saycan
+propose: saycan
+alpha: 1.0
+beta: 1.0
+affordance: true
+clarification: true
+safety: true
+monitor: true
+max_steps: 8
+max_retries: 1

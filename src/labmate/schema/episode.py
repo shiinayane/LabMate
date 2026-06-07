@@ -65,6 +65,7 @@ class Episode(BaseModel):
     gold_target: Optional[str] = None            # object the referring expression should resolve to
     required_decision: Decision = "ACT"          # correct first gate output
     safety_tier: SafetyTier = "S0"
+    induce_failure: bool = False                  # recovery split: fail the first execute, then retry
 
     eval_function: EvalFunction = Field(default_factory=EvalFunction)
 
