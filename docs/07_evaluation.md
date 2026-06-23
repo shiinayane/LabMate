@@ -4,6 +4,13 @@ Metrics are computed **offline from the structured episode logs** (the executed 
 gate decisions). The guiding principle: **score on what actually happened in sim, not on text**.
 Stratify every metric by `task_type` and report per-split.
 
+Each per-episode log also carries a **`steps_trace[]`** — per step: the grounded `candidates` with
+`s_llm` / `s_aff` / combined `score` (+ which preconditions failed), the grounding rule that fired,
+the router / shield / affordance stage verdicts, and the execution result / scene delta / goal check.
+This is *why* the gate chose, asked, or refused — readable as a narrative via `labmate.trace.render_trace`
+(dropped as `<episode_id>.trace.txt`; streamed live with `run_episode.py --verbose`). It is the
+substrate for the per-stage **attribution** / failure-taxonomy and for debugging the planners.
+
 ## Metric definitions
 
 ### Task / execution (PARTNR-style)

@@ -19,11 +19,14 @@ class EpisodeLogger:
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.jsonl = self.out_dir / "episodes.jsonl"
 
-    def write(self, record: dict[str, Any]) -> Path:
+    def write(self, record: dict[str, Any], narrative: str | None = None) -> Path:
         record = {"ts": datetime.now(timezone.utc).isoformat(), **record}
         line = json.dumps(record, default=str)
         with self.jsonl.open("a") as f:
             f.write(line + "\n")
-        per = self.out_dir / f"{record.get('episode_id', 'episode')}.json"
+        eid = record.get("episode_id", "episode")
+        per = self.out_dir / f"{eid}.json"
         per.write_text(json.dumps(record, indent=2, default=str) + "\n")
+        if narrative is not None:
+            (self.out_dir / f"{eid}.trace.txt").write_text(narrative)
         return per

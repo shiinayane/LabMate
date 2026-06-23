@@ -33,6 +33,7 @@ class Verdict:
     tier: str = "S0"
     reason: Optional[str] = None
     question: Optional[str] = None
+    rule: Optional[str] = None         # name of the rule that fired (for trace/logs)
 
     @property
     def blocks(self) -> bool:
@@ -50,5 +51,6 @@ def check(candidate: Candidate, schema: InstructionSchema, sg: SceneGraph) -> Ve
     for rule in RULES:
         v = rule(candidate, schema, sg)
         if v is not None:
+            v.rule = getattr(rule, "__name__", None)
             return v
     return verdict("EXECUTE")

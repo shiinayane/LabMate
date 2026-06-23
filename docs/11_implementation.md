@@ -6,38 +6,39 @@
 
 ## Status
 
-| Milestone (09_roadmap) | State | Notes |
-|------------------------|-------|-------|
-| Environment bring-up | ✅ done | mise(runtime)+uv(packages), Isaac Sim 5.1 on aarch64/GB10. See docs/08. |
-| **W1 — schema + loop (`rule`, `llm_only`)** | ✅ done | end-to-end `pick` runs in sim; live `llm_only` verified. |
-| **W2 — scene graph + grounding + `scene_grounded`** | ✅ done | relations + deterministic referring-expression resolver; `scene_grounded` picks "the left bottle" end-to-end, grounding_accuracy=1. |
+| Milestone (09_roadmap)                                     | State  | Notes                                                                                                                                                                                                     |
+| ---------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Environment bring-up                                       | ✅ done | mise(runtime)+uv(packages), Isaac Sim 5.1 on aarch64/GB10. See docs/08.                                                                                                                                   |
+| **W1 — schema + loop (`rule`, `llm_only`)**                | ✅ done | end-to-end `pick` runs in sim; live `llm_only` verified.                                                                                                                                                  |
+| **W2 — scene graph + grounding + `scene_grounded`**        | ✅ done | relations + deterministic referring-expression resolver; `scene_grounded` picks "the left bottle" end-to-end, grounding_accuracy=1.                                                                       |
 | **W3 — clarification + safety + sequence exec + `saycan`** | ✅ done | real shield (5-tier/8 rules), deterministic router, goal-directed `saycan` w/ retry, sequence executor (fresh controller/skill). Sim: unsafe→REFUSE (executed=0), recovery→retry→success; 25 tests green. |
-| W4 — metric aggregation + Figure 1/2 | ⬜ next | aggregate URR/FRR/Ask/recovery/grounding over 50–100 episodes; baseline-vs-framework + ablations. |
-| W4 — metric suite + the two figures | ⬜ | full metrics over logs; 50–100 episodes; Figure 1 + Figure 2. |
+| W4 — metric aggregation + Figure 1/2                       | ⬜ next | aggregate URR/FRR/Ask/recovery/grounding over 50–100 episodes; baseline-vs-framework + ablations.                                                                                                         |
+| W4 — metric suite + the two figures                        | ⬜      | full metrics over logs; 50–100 episodes; Figure 1 + Figure 2.                                                                                                                                             |
 
 ## The pipeline → code map
 
 One instruction flows `NL → schema → propose → gate → execute → monitor → log`. Each stage is one
 place in the code (design-doc reference in parentheses):
 
-| Stage | What it does | Code | Design |
-|-------|--------------|------|--------|
-| ① parse | NL → structured `InstructionSchema` | `parser/rule_parser.py`, `parser/llm_parser.py` | 02 |
-| — schema | the data structures + predicate library | `schema/{instruction,episode,predicates}.py` | 02 |
-| — scene | objects + flags + relations (`is_in/is_on/near` + left/right); `from_specs` derives relations from poses | `scene/scene_graph.py` | 02, 08 |
-| — grounding | deterministic referring-expression resolver ("the left/empty/nearest X") + quantity | `scene/grounding.py` | 02 |
-| ② propose | candidate `(skill, args)` — category (`llm_only`), grounded (`scene_grounded`), or goal-directed (`saycan`) | `planner/baselines.py`, `skills/registry.py` | 04, 03 |
-| — skills | the 8 skills + preconditions/effects/success | `skills/definitions.py` | 03 |
-| — affordance / goals | feasibility `S_aff∈{0,1}`; goal lookahead (planner belief, decoupled from eval) | `affordance.py`, `planner/{scoring,goals}.py` | 04 |
-| ③ gate | joint **ASK / REFUSE / ACT** arbiter (router → shield → affordance), per-stage attribution | `planner/loop.py::gate` | 04 |
-| — clarify | deterministic ACT/ASK/REFUSE router; ASK→oracle→resolve loop in `run_episode` | `clarification/router.py` | 06 |
-| — safety | RoboGuard-style shield: 5-tier verdict + 8 rules over object/scene flags | `safety/shield.py`, `safety/rules.py` | 05 |
-| ④ execute | drive a LabUtopia controller; **fresh controller per skill** (sequence/retry) | `skills/executor.py` (`SimBackend`), `labutopia/adapter.py` | 03, 08 |
-| ⑤ monitor | stop on goal lookahead; retry on failure (recovery/replan) | `monitor.py`, `planner/loop.py` | 01, 07 |
-| — metrics | PC + grounding-acc + URR/FRR/Ask-PR/recovery + attribution | `evaluation/metrics.py` | 07 |
-| — log | structured per-episode JSONL (decisions, tokens, attribution) | `episode_logger.py` | 01, 07 |
-| loop | ties it all together, 4 baselines = configs | `planner/loop.py::run_episode` | 01, 04 |
-| LLM seam | provider-agnostic client (Anthropic) | `llm/client.py` | 04 |
+| Stage                | What it does                                                                                                | Code                                                        | Design |
+| -------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------ |
+| ① parse              | NL → structured `InstructionSchema`                                                                         | `parser/rule_parser.py`, `parser/llm_parser.py`             | 02     |
+| — schema             | the data structures + predicate library                                                                     | `schema/{instruction,episode,predicates}.py`                | 02     |
+| — scene              | objects + flags + relations (`is_in/is_on/near` + left/right); `from_specs` derives relations from poses    | `scene/scene_graph.py`                                      | 02, 08 |
+| — grounding          | deterministic referring-expression resolver ("the left/empty/nearest X") + quantity                         | `scene/grounding.py`                                        | 02     |
+| ② propose            | candidate `(skill, args)` — category (`llm_only`), grounded (`scene_grounded`), or goal-directed (`saycan`) | `planner/baselines.py`, `skills/registry.py`                | 04, 03 |
+| — skills             | the 8 skills + preconditions/effects/success                                                                | `skills/definitions.py`                                     | 03     |
+| — affordance / goals | feasibility `S_aff∈{0,1}`; goal lookahead (planner belief, decoupled from eval)                             | `affordance.py`, `planner/{scoring,goals}.py`               | 04     |
+| ③ gate               | joint **ASK / REFUSE / ACT** arbiter (router → shield → affordance), per-stage attribution                  | `planner/loop.py::gate`                                     | 04     |
+| — clarify            | deterministic ACT/ASK/REFUSE router; ASK→oracle→resolve loop in `run_episode`                               | `clarification/router.py`                                   | 06     |
+| — safety             | RoboGuard-style shield: 5-tier verdict + 8 rules over object/scene flags                                    | `safety/shield.py`, `safety/rules.py`                       | 05     |
+| ④ execute            | drive a LabUtopia controller; **fresh controller per skill** (sequence/retry)                               | `skills/executor.py` (`SimBackend`), `labutopia/adapter.py` | 03, 08 |
+| ⑤ monitor            | stop on goal lookahead; retry on failure (recovery/replan)                                                  | `monitor.py`, `planner/loop.py`                             | 01, 07 |
+| — metrics            | PC + grounding-acc + URR/FRR/Ask-PR/recovery + attribution                                                  | `evaluation/metrics.py`                                     | 07     |
+| — trace              | per-step candidates + `s_llm`/`s_aff`/score, grounding rule, gate-stage verdicts, exec/scene/goal; JSON + narrative + live `--verbose` | `trace.py`, `planner/loop.py::gate_traced`       | 07     |
+| — log                | per-episode JSON/JSONL (+ `<id>.trace.txt` narrative)                                                       | `episode_logger.py`                                         | 01, 07 |
+| loop                 | ties it all together, 4 baselines = configs                                                                 | `planner/loop.py::run_episode`                              | 01, 04 |
+| LLM seam             | provider-agnostic client (Anthropic)                                                                        | `llm/client.py`                                             | 04     |
 
 **Invariant (do not break):** the LLM only *proposes*; the deterministic `gate()` decides. Raw LLM
 text never drives the robot (docs/01).
@@ -64,7 +65,13 @@ uv run pytest
 uv run python scripts/run_episode.py \
   --episode benchmark/episodes/direct/pick_conical_bottle.json \
   --planner configs/planners/rule.yaml --headless
-# → outputs/labmate/<episode_id>/<episode_id>.json  (schema, decisions, success, pc)
+# → outputs/labmate/<episode_id>/<episode_id>.json  (schema, decisions, success, pc, steps_trace)
+#   + <episode_id>.trace.txt  (human-readable per-step narrative)
+
+# --verbose streams the per-step reasoning (candidates, scores, gate verdicts) live;
+# --debug-llm folds the raw LLM prompt/response into the trace (llm baselines).
+uv run python scripts/run_episode.py --episode ... --planner configs/planners/scene_grounded.yaml \
+  --headless --verbose
 
 # llm_only (live): set ANTHROPIC_API_KEY, then
 uv sync --extra llm

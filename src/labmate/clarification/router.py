@@ -20,12 +20,22 @@ from ..schema.instruction import InstructionSchema
 
 def route(schema: InstructionSchema, sg: SceneGraph) -> str:
     """Return one of "ACT" | "ASK" | "REFUSE"."""
+    return route_explain(schema, sg)[0]
+
+
+def route_explain(schema: InstructionSchema, sg: SceneGraph) -> tuple[str, str]:
+    """Like `route`, but also returns a short reason for the trace/logs.
+
+    Reasons: ``target_absent`` | ``missing_slot:<slots>`` | ``ambiguous:<n>`` | ``resolved``.
+    """
     res = grounding.resolve(schema, sg)
     if not res.candidates:
-        return "REFUSE"
-    if schema.missing_slots or res.ambiguous:
-        return "ASK"
-    return "ACT"
+        return "REFUSE", "target_absent"
+    if schema.missing_slots:
+        return "ASK", f"missing_slot:{'+'.join(schema.missing_slots)}"
+    if res.ambiguous:
+        return "ASK", f"ambiguous:{len(res.candidates)}"
+    return "ACT", "resolved"
 
 
 def should_ask(schema: InstructionSchema, sg: SceneGraph) -> bool:

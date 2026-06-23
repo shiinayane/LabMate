@@ -22,6 +22,7 @@ from labmate.episode_logger import EpisodeLogger          # noqa: E402
 from labmate.parser.rule_parser import RuleParser          # noqa: E402
 from labmate.planner.loop import PlannerConfig, run_episode  # noqa: E402
 from labmate.schema.episode import Episode                 # noqa: E402
+from labmate.trace import render_step, render_trace        # noqa: E402
 
 
 def _parser_and_client(cfg: PlannerConfig):
@@ -42,10 +43,16 @@ def main() -> None:
     ap.add_argument("--scenes-dir", default=str(REPO / "benchmark" / "scenes"))
     ap.add_argument("--out", default=str(REPO / "outputs" / "labmate"))
     ap.add_argument("--headless", action="store_true")
+    ap.add_argument("--verbose", action="store_true",
+                    help="stream the per-step reasoning trace (candidates, scores, gate verdicts)")
+    ap.add_argument("--debug-llm", action="store_true",
+                    help="capture raw LLM prompt/response into the trace (llm baselines)")
     args = ap.parse_args()
 
     episode = Episode.load(args.episode)
     cfg = PlannerConfig.load(args.planner)
+    if args.debug_llm:
+        cfg.trace_llm = True
     scene_spec = json.loads((Path(args.scenes_dir) / f"{episode.scene}.json").read_text())
     parser, client = _parser_and_client(cfg)
 
@@ -64,10 +71,13 @@ def main() -> None:
                          objects=episode_objects, scene_flags=scene_flags).start()
     try:
         backend = SimBackend(session, induce_failure=episode.induce_failure)
-        result = run_episode(episode, cfg, backend, parser, client)
+        # --verbose: stream each step's reasoning as it happens (also exercises on_step for the demo).
+        on_step = (lambda st: print(render_step(st), flush=True)) if args.verbose else None
+        result = run_episode(episode, cfg, backend, parser, client, on_step=on_step)
         # IMPORTANT: log + print BEFORE session.close() — SimulationApp.close() hard-exits the
         # process (fastShutdown), so anything after it never runs.
-        log_path = EpisodeLogger(run_dir).write(result.to_log())
+        narrative = render_trace(result)
+        log_path = EpisodeLogger(run_dir).write(result.to_log(), narrative)
         # flush=True: SimulationApp.close() below hard-exits and can drop buffered stdout.
         print(f">>> episode={episode.episode_id} planner={cfg.name} "
               f"success={result.success} pc={result.pc} steps={result.steps} "

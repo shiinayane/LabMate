@@ -35,37 +35,43 @@ class Skill:
 
 
 # ---- small condition helpers -------------------------------------------
+def _labeled(fn: Cond, label: str) -> Cond:
+    """Tag a condition with a human-readable label (read by affordance trace / logs)."""
+    fn.label = label                          # type: ignore[attr-defined]
+    return fn
+
+
 def is_graspable(key: str = "target") -> Cond:
     def c(args, sg):
         o = sg.get(args[key])
         return bool(o and o.flags.is_graspable)
-    return c
+    return _labeled(c, f"graspable({key})")
 
 
 def gripper_empty() -> Cond:
-    return lambda args, sg: sg.gripper_empty()
+    return _labeled(lambda args, sg: sg.gripper_empty(), "gripper_empty")
 
 
 def holding(key: str = "target") -> Cond:
-    return lambda args, sg: sg.held == args[key]
+    return _labeled(lambda args, sg: sg.held == args[key], f"holding({key})")
 
 
 def present(key: str) -> Cond:
-    return lambda args, sg: sg.get(args[key]) is not None
+    return _labeled(lambda args, sg: sg.get(args[key]) is not None, f"present({key})")
 
 
 def container_open(key: str, want: bool) -> Cond:
     def c(args, sg):
         o = sg.get(args[key])
         return bool(o and o.is_open == want)
-    return c
+    return _labeled(c, f"{key}.is_open=={want}")
 
 
 def filled(key: str) -> Cond:
     def c(args, sg):
         o = sg.get(args[key])
         return bool(o and o.is_filled)
-    return c
+    return _labeled(c, f"filled({key})")
 
 
 # ---- symbolic effects ---------------------------------------------------

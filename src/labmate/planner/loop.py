@@ -27,6 +27,7 @@ from ..schema.instruction import InstructionSchema
 from ..scene import grounding
 from ..scene.scene_graph import SceneGraph
 from ..skills.registry import Candidate
+from ..trace import CandidateScore, GroundingTrace, StepTrace
 from . import baselines, goals, scoring
 
 
@@ -43,6 +44,7 @@ class PlannerConfig:
     monitor: bool = True             # closed-loop goal check / stop condition
     max_steps: int = 8
     max_retries: int = 1             # closed-loop retries on execution failure (recovery/replan)
+    trace_llm: bool = False          # capture raw LLM prompt/response into the step trace
     llm: dict = field(default_factory=dict)
 
     @classmethod
@@ -98,40 +100,69 @@ def gate(cands: list[Candidate], schema: InstructionSchema, sg: SceneGraph,
     """Joint clarification + safety + affordance arbiter (docs/04). Deterministic.
 
     Order: clarification router (ASK / REFUSE-absent) → safety shield (REFUSE/STOP/CONFIRM/SAFE_SLOW)
-    → affordance filter. Every non-ACT decision carries a per-stage ``attribution`` (07).
+    → affordance filter. Every non-ACT decision carries a per-stage ``attribution`` (07). See
+    ``gate_traced`` for the same logic plus a structured per-step trace.
     """
-    if cfg.clarification:
-        tok = router.route(schema, sg)
-        if tok == "REFUSE":
-            return Decision("REFUSE", reason="target_absent", attribution="grounding")
-        if tok == "ASK":
-            return Decision("ASK", question=router.question(schema, sg), attribution="clarification")
-    if not cands:
-        return Decision("REFUSE", reason="no_candidate", attribution="grounding")
+    return gate_traced(cands, schema, sg, cfg)[0]
+
+
+def gate_traced(cands: list[Candidate], schema: InstructionSchema, sg: SceneGraph,
+                cfg: PlannerConfig) -> tuple[Decision, list[CandidateScore], dict]:
+    """``gate`` + the candidate scores and per-stage gate verdicts it reasoned over (07 trace)."""
+    gate_info: dict = {"router": None, "shield": None, "affordance": None}
 
     def key(c: Candidate) -> float:
         a = affordance.s_aff(c, sg) if cfg.affordance else 1.0
         return scoring.combine(c.s_llm, a, cfg.alpha, cfg.beta)
 
-    best = scoring.argmax(cands, key)
-    care = False
+    best = scoring.argmax(cands, key) if cands else None
 
+    # score every admissible candidate for the trace (cheap, deterministic)
+    cand_scores: list[CandidateScore] = []
+    for c in cands:
+        a = affordance.s_aff(c, sg) if cfg.affordance else 1.0
+        cand_scores.append(CandidateScore(
+            action=c.as_text(), s_llm=c.s_llm, s_aff=a,
+            score=scoring.combine(c.s_llm, a, cfg.alpha, cfg.beta),
+            chosen=(c is best),
+            aff_failed=affordance.failed_preconditions(c.skill, c.args, sg) if a == 0.0 else [],
+        ))
+
+    if cfg.clarification:
+        tok, reason = router.route_explain(schema, sg)
+        gate_info["router"] = {"token": tok, "reason": reason}
+        if tok == "REFUSE":
+            return Decision("REFUSE", reason="target_absent", attribution="grounding"), cand_scores, gate_info
+        if tok == "ASK":
+            return (Decision("ASK", question=router.question(schema, sg), attribution="clarification"),
+                    cand_scores, gate_info)
+    if not cands:
+        return Decision("REFUSE", reason="no_candidate", attribution="grounding"), cand_scores, gate_info
+
+    care = False
     if cfg.safety:
         v = shield.check(best, schema, sg)
+        gate_info["shield"] = {"kind": v.kind, "tier": v.tier, "rule": v.rule, "reason": v.reason}
         if v.kind in ("REFUSE", "STOP"):
-            return Decision("REFUSE", reason=v.reason or v.kind.lower(),
-                            attribution="safety", tier=v.tier)
+            return (Decision("REFUSE", reason=v.reason or v.kind.lower(), attribution="safety", tier=v.tier),
+                    cand_scores, gate_info)
         if v.kind == "CONFIRM":
-            return Decision("ASK", question=v.question, attribution="safety")
+            return Decision("ASK", question=v.question, attribution="safety"), cand_scores, gate_info
         care = (v.kind == "SAFE_SLOW")
 
+    refiltered = False
     if cfg.affordance and affordance.s_aff(best, sg) == 0.0:
         feasible = [c for c in cands if affordance.feasible(c, sg)]
         if not feasible:
-            return Decision("REFUSE", reason="no_feasible_skill", attribution="planning")
+            gate_info["affordance"] = {"applied": True, "refiltered": False}
+            return Decision("REFUSE", reason="no_feasible_skill", attribution="planning"), cand_scores, gate_info
         best = scoring.argmax(feasible, key)
+        refiltered = True
+        for cs in cand_scores:
+            cs.chosen = (cs.action == best.as_text())
+    gate_info["affordance"] = {"applied": cfg.affordance, "refiltered": refiltered}
 
-    return Decision("ACT", skill=best, care=care)
+    return Decision("ACT", skill=best, care=care), cand_scores, gate_info
 
 
 def _propose(schema, sg, history, cfg: PlannerConfig, client) -> list[Candidate]:
@@ -157,6 +188,7 @@ class EpisodeResult:
     episode_id: str
     planner: str
     schema: InstructionSchema
+    instruction: str = ""                         # the raw NL (schema may be mutated by clarify)
     decisions: list[Decision] = field(default_factory=list)
     history: list[tuple] = field(default_factory=list)
     pc: float = 0.0
@@ -174,11 +206,13 @@ class EpisodeResult:
     safety_tier: Optional[str] = None            # tier when the shield blocked
     executed: int = 0                            # # of skills actually run (URR "did-not-execute")
     recovered: bool = False                      # a failure occurred but the episode still succeeded
+    steps_trace: list[StepTrace] = field(default_factory=list)   # per-step reasoning trace (07)
 
     def to_log(self) -> dict[str, Any]:
         return {
             "episode_id": self.episode_id,
             "planner": self.planner,
+            "instruction": self.instruction,
             "schema": self.schema.model_dump(),
             "decisions": [
                 {"kind": d.kind, "skill": d.skill.as_text() if d.skill else None,
@@ -202,17 +236,38 @@ class EpisodeResult:
             "safety_tier": self.safety_tier,
             "executed": self.executed,
             "recovered": self.recovered,
+            "steps_trace": [st.to_dict() for st in self.steps_trace],
         }
 
 
+def _decision_dict(d: Decision) -> dict[str, Any]:
+    return {"kind": d.kind, "skill": d.skill.as_text() if d.skill else None,
+            "question": d.question, "reason": d.reason, "attribution": d.attribution,
+            "tier": d.tier, "care": d.care}
+
+
+def _rel_set(sg: SceneGraph) -> set:
+    return {(rel, *edge) for rel, edges in sg.relations.items() for edge in edges}
+
+
 def run_episode(episode: Episode, cfg: PlannerConfig, backend: Backend, parser,
-                client=None) -> EpisodeResult:
-    """NL → schema → propose → gate → execute → monitor (docs/01)."""
+                client=None, on_step=None) -> EpisodeResult:
+    """NL → schema → propose → gate → execute → monitor (docs/01).
+
+    ``on_step(StepTrace)`` is called once per step as it completes (live ``--verbose`` streaming /
+    the future interactive demo); default no-op.
+    """
     schema = parser.parse(episode.instruction)
-    result = EpisodeResult(episode_id=episode.episode_id, planner=cfg.name, schema=schema)
+    result = EpisodeResult(episode_id=episode.episode_id, planner=cfg.name, schema=schema,
+                           instruction=episode.instruction)
 
     trace: list[SceneGraph] = [backend.scene_graph().model_copy(deep=True)]
     history: list[tuple] = []
+
+    def emit(st: StepTrace) -> None:
+        result.steps_trace.append(st)
+        if on_step is not None:
+            on_step(st)
 
     # grounding metric: resolve the referring expression against the initial scene (07)
     result.resolved_target = grounding.resolve(schema, trace[0]).target
@@ -224,8 +279,19 @@ def run_episode(episode: Episode, cfg: PlannerConfig, backend: Backend, parser,
         result.steps = step + 1
         sg = backend.scene_graph()
         cands = _propose(schema, sg, history, cfg, client)
-        decision = gate(cands, schema, sg, cfg)
+        decision, cand_scores, gate_info = gate_traced(cands, schema, sg, cfg)
         result.decisions.append(decision)
+
+        gres = grounding.resolve(schema, sg)
+        st = StepTrace(
+            step=step + 1,
+            grounding=GroundingTrace(ref=schema.object_ref, rules_fired=gres.rules_fired,
+                                     ranked=gres.candidates, resolved=gres.target,
+                                     ambiguous=gres.ambiguous),
+            candidates=cand_scores, gate=gate_info, decision=_decision_dict(decision),
+        )
+        if cfg.trace_llm and client is not None and getattr(client, "last_exchange", None):
+            st.llm = client.last_exchange
 
         if decision.kind == "ASK":
             result.asked = True
@@ -237,9 +303,11 @@ def run_episode(episode: Episode, cfg: PlannerConfig, backend: Backend, parser,
                 history.append(("ask", episode.answer))
                 result.resolved_target = grounding.resolve(schema, backend.scene_graph()).target
                 result.grounding_correct = grounding_accuracy(result.resolved_target, episode.gold_target)
+                emit(st)
                 continue
             result.reason = decision.question
             result.attribution = decision.attribution or "clarification"
+            emit(st)
             break
 
         if decision.kind == "REFUSE":
@@ -247,23 +315,35 @@ def run_episode(episode: Episode, cfg: PlannerConfig, backend: Backend, parser,
             result.reason = decision.reason
             result.attribution = decision.attribution or "safety"
             result.safety_tier = decision.tier
+            emit(st)
             break
 
         cand = decision.skill
         result.care = result.care or decision.care
+        before_rel = _rel_set(sg)
         ok = backend.execute(cand)
         result.executed += 1
         history.append(("act", cand.as_text(), ok))
         if not ok:
             failed_once = True
             history.append(("fail", cand.as_text()))
-        trace.append(backend.scene_graph().model_copy(deep=True))
+        after_sg = backend.scene_graph()
+        trace.append(after_sg.model_copy(deep=True))
+
+        st.execution = {"ran": True, "ok": ok, "target": cand.args.get("target")}
+        st.scene_delta = {"held": after_sg.held,
+                          "relations_added": sorted(list(r) for r in _rel_set(after_sg) - before_rel)}
 
         # closed-loop stop on the planner's predicted goals (decoupled from the gold eval_function)
+        stop = False
         if cfg.monitor:
-            g = goals.predict_goals(schema, backend.scene_graph())
-            if goals.satisfied(g, backend.scene_graph()):
-                break
+            g = goals.predict_goals(schema, after_sg)
+            sat = goals.satisfied(g, after_sg)
+            st.goal_check = {"predicted": [f"{p}({', '.join(a)})" for p, a in g], "satisfied": sat}
+            stop = sat
+        emit(st)
+        if stop:
+            break
         # a failed execute does not stop the loop: a goal-directed planner (saycan) re-proposes the
         # same skill next iteration → recovery/replan, bounded by max_steps.
 

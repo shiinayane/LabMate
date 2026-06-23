@@ -35,6 +35,7 @@ class AnthropicClient:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self._client = None
+        self.last_exchange: Optional[dict] = None   # {system, user, tool, response} of the last call
 
     def _anthropic(self):
         if self._client is None:
@@ -63,7 +64,10 @@ class AnthropicClient:
         )
         for block in resp.content:
             if getattr(block, "type", None) == "tool_use":
-                return dict(block.input)
+                out = dict(block.input)
+                self.last_exchange = {"system": system, "user": user,
+                                      "tool": tool_name, "response": out}
+                return out
         raise RuntimeError("model did not return a tool_use block")
 
     def complete_json(self, system: str, user: str, json_schema: dict) -> dict:

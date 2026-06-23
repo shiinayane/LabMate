@@ -27,3 +27,16 @@ def s_aff(candidate: Candidate, sg: SceneGraph) -> float:
 
 def feasible(candidate: Candidate, sg: SceneGraph) -> bool:
     return s_aff(candidate, sg) == 1.0
+
+
+def failed_preconditions(skill: Skill, args: dict, sg: SceneGraph) -> list[str]:
+    """Labels of the preconditions that do NOT hold (for trace/logs). Empty == feasible."""
+    failed: list[str] = []
+    for cond in skill.preconditions:
+        label = getattr(cond, "label", getattr(cond, "__name__", "precondition"))
+        try:
+            if not cond(args, sg):
+                failed.append(label)
+        except (KeyError, AttributeError):
+            failed.append(label)
+    return failed

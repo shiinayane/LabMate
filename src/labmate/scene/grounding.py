@@ -20,6 +20,7 @@ class GroundingResult:
     candidates: list[str] = field(default_factory=list)   # ranked object names that match
     target: str | None = None                             # best/chosen object
     ambiguous: bool = False                               # >1 equally-valid survivor
+    rules_fired: list[str] = field(default_factory=list)  # which filters applied (for trace/logs)
 
     @property
     def resolved(self) -> bool:
@@ -59,32 +60,40 @@ def _anchor_after(text: str, keyword: str, sg: SceneGraph) -> list[str]:
 
 def resolve(schema: InstructionSchema, sg: SceneGraph) -> GroundingResult:
     """Resolve the schema's referred object against the scene graph."""
+    fired: list[str] = []
     if schema.object_category:
         cands = sg.names_of_category(schema.object_category)
+        fired.append(f"category:{schema.object_category}")
     else:
         cands = list(sg.objects)
     if not cands:
-        return GroundingResult(candidates=[], target=None, ambiguous=False)
+        return GroundingResult(candidates=[], target=None, ambiguous=False, rules_fired=fired)
 
     text = (schema.object_ref or "").lower()
 
     # direct name match wins (e.g. a clarification oracle answer that names the object)
     for name in cands:
         if name.lower() in text:
-            return GroundingResult(candidates=[name], target=name, ambiguous=False)
+            return GroundingResult(candidates=[name], target=name, ambiguous=False,
+                                   rules_fired=fired + [f"name-match:{name}"])
 
     # spatial: side
     for side in _SIDES:
         if side in text:
-            cands = [n for n in cands if sg.side_of(n) == side] or cands
+            filt = [n for n in cands if sg.side_of(n) == side]
+            if filt:
+                cands = filt
+                fired.append(f"side:{side}")
 
     # relational: near / in <anchor>
     for kw, rel in (("near", "near"), ("inside", "is_in"), (" in ", "is_in")):
         if kw in text:
             anchors = _anchor_after(text, kw, sg)
             if anchors:
-                cands = [n for n in cands
-                         if any(sg.has_relation(rel, n, a) for a in anchors)] or cands
+                filt = [n for n in cands if any(sg.has_relation(rel, n, a) for a in anchors)]
+                if filt:
+                    cands = filt
+                    fired.append(f"{rel}:{'+'.join(anchors)}")
 
     # attribute filters
     for word, test in _ATTR_TESTS.items():
@@ -92,17 +101,21 @@ def resolve(schema: InstructionSchema, sg: SceneGraph) -> GroundingResult:
             filt = [n for n in cands if test(sg.objects[n])]
             if filt:
                 cands = filt
+                fired.append(f"attr:{word}")
 
     # ranking: nearest / farthest pick a single best deterministically
     if any(w in text for w in ("nearest", "closest")):
         cands = sorted(cands, key=lambda n: sg.distance_to_robot(n) or float("inf"))
-        return GroundingResult(candidates=cands, target=cands[0], ambiguous=False)
+        return GroundingResult(candidates=cands, target=cands[0], ambiguous=False,
+                               rules_fired=fired + ["nearest"])
     if any(w in text for w in ("farthest", "furthest")):
         cands = sorted(cands, key=lambda n: sg.distance_to_robot(n) or float("-inf"), reverse=True)
-        return GroundingResult(candidates=cands, target=cands[0], ambiguous=False)
+        return GroundingResult(candidates=cands, target=cands[0], ambiguous=False,
+                               rules_fired=fired + ["farthest"])
 
     target = cands[0] if cands else None
-    return GroundingResult(candidates=cands, target=target, ambiguous=len(cands) > 1)
+    return GroundingResult(candidates=cands, target=target, ambiguous=len(cands) > 1,
+                           rules_fired=fired)
 
 
 def resolve_quantity(schema: InstructionSchema, sg: SceneGraph) -> list[str]:
