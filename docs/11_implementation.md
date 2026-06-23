@@ -109,9 +109,12 @@ Env injection (`LD_PRELOAD`, EULA) is automatic under the user's zsh `uv run` �
 
 - **Recovery uses an induced-failure flag** (episode marks the first execute to fail) — a deterministic
   stand-in for physical failure; the recover *loop* (saycan goal-directed retry) is the real thing.
-- **Sim sequence depth:** in sim we validated retry (induced-fail → 1 real pick) + REFUSE (0 executes).
-  Multi-real-skill sim sequences (e.g. pick→place via a place task, or the LabUtopia composites) are
-  unit-tested for the *logic* but full sim is a W4 item.
+- **Sim sequence depth:** **two real controllers in one process is now verified** (audit fix —
+  LabUtopia's `eval` resolver was re-registered without `replace=True`, crashing the 2nd controller;
+  the adapter now patches `OmegaConf.register_new_resolver` to be idempotent). `run_skill` also has a
+  hard frame cap (never hangs) and no longer calls `on_task_complete` (which drifted `current_obj_idx`).
+  A full *task-level* multi-skill sim sequence (e.g. pick→place via a place task / LabUtopia composites)
+  is still a W4 item, but the per-process limit that blocked it is gone.
 - **Baseline configs for Figure 1:** `rule`/`llm_only` should run with the framework components OFF to
   make the contrast fair (the framework = `scene_grounded`/`saycan` with router+shield ON). The
   config toggles + the aggregation runner + plots are W4.

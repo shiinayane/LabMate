@@ -24,7 +24,7 @@
   },
   "eval_function": {
     "propositions": [
-      {"pred": "count", "args": ["test_tube", "human_workspace"]}
+      {"pred": "count_ge", "args": ["test_tube", "human_workspace", 2]}
     ],
     "constraints": [
       {"type": "terminal", "props": [0]}

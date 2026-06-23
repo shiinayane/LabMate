@@ -45,9 +45,13 @@ def _template(schema: InstructionSchema) -> list[str]:
 
 
 def propose_rule(schema: InstructionSchema, sg: SceneGraph, history: list) -> list[Candidate]:
-    """Grounded candidate(s) for the current step of the template (deterministic, no LLM)."""
+    """Grounded candidate(s) for the current step of the template (deterministic, no LLM).
+
+    Advance only on **successful** acts (``h == ("act", text, ok)``), so a failed step is re-proposed
+    (retry) rather than skipped — the loop bounds the retries via ``max_retries``.
+    """
     template = _template(schema)
-    step_idx = sum(1 for h in history if h and h[0] == "act")
+    step_idx = sum(1 for h in history if h and h[0] == "act" and len(h) > 2 and h[2])
     if step_idx >= len(template):
         return []
     return ground_skill(template[step_idx], schema, sg)

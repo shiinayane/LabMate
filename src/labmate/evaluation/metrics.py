@@ -65,9 +65,13 @@ def ask_precision_recall(pairs) -> dict:
 
 
 def recovery_rate(pairs) -> Optional[float]:
-    """Recovered-after-induced-failure / recovery-split episodes (docs/07)."""
+    """Recovered-after-induced-failure / recovery-split episodes (docs/07).
+
+    Counts only genuine recoveries (`r.recovered` = a failure occurred AND the episode still
+    succeeded). A plain success with no failure must NOT be credited, or the metric is inflated.
+    """
     rec = [(r, e) for r, e in pairs if getattr(e, "induce_failure", False) or e.task_type == "recovery"]
-    return _ratio(sum(1 for r, e in rec if getattr(r, "recovered", False) or r.success), len(rec))
+    return _ratio(sum(1 for r, e in rec if getattr(r, "recovered", False)), len(rec))
 
 
 def attribution_distribution(results) -> dict[str, int]:

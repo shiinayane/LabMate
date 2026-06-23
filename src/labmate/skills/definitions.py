@@ -161,10 +161,12 @@ def _build() -> dict[str, Skill]:
         ),
         Skill(
             name="pour",
-            args_spec={"src": "object", "dst": "object"},
-            preconditions=[holding("src"), filled("src"), present("dst")],
-            effects=[_set_filled("dst", True), _set_filled("src", False)],
-            success=lambda args, sg: bool(sg.get(args["dst"]) and sg.get(args["dst"]).is_filled),
+            # `dest` (not `dst`) so registry.ground_skill binds it from schema.destination and it
+            # matches goals.predict_goals (is_filled([destination])).
+            args_spec={"src": "object", "dest": "object"},
+            preconditions=[holding("src"), filled("src"), present("dest")],
+            effects=[_set_filled("dest", True), _set_filled("src", False)],
+            success=lambda args, sg: bool(sg.get(args["dest"]) and sg.get(args["dest"]).is_filled),
             controller="pour",
             failure_reasons=["spill", "src_empty", "timeout"],
             needs_confirmation=_pour_unknown_liquid,

@@ -275,6 +275,8 @@ def run_episode(episode: Episode, cfg: PlannerConfig, backend: Backend, parser,
     result.grounding_correct = grounding_accuracy(result.resolved_target, episode.gold_target)
 
     failed_once = False
+    retry_count = 0          # consecutive failures of the SAME action (bounded by cfg.max_retries)
+    last_failed = None
     for step in range(cfg.max_steps):
         result.steps = step + 1
         sg = backend.scene_graph()
@@ -324,28 +326,38 @@ def run_episode(episode: Episode, cfg: PlannerConfig, backend: Backend, parser,
         ok = backend.execute(cand)
         result.executed += 1
         history.append(("act", cand.as_text(), ok))
-        if not ok:
-            failed_once = True
-            history.append(("fail", cand.as_text()))
+
         after_sg = backend.scene_graph()
         trace.append(after_sg.model_copy(deep=True))
-
         st.execution = {"ran": True, "ok": ok, "target": cand.args.get("target")}
         st.scene_delta = {"held": after_sg.held,
                           "relations_added": sorted(list(r) for r in _rel_set(after_sg) - before_rel)}
 
+        # retry budget: a failed execute is re-proposed next iteration (the goal-directed planner
+        # re-proposes the unmet skill), bounded by cfg.max_retries on the SAME action.
+        give_up = False
+        if not ok:
+            failed_once = True
+            history.append(("fail", cand.as_text()))
+            action = cand.as_text()
+            retry_count = retry_count + 1 if action == last_failed else 1
+            last_failed = action
+            if retry_count > cfg.max_retries:        # max_retries=0 -> no retry, give up at once
+                result.attribution = "execution"
+                give_up = True
+        else:
+            last_failed, retry_count = None, 0
+
         # closed-loop stop on the planner's predicted goals (decoupled from the gold eval_function)
         stop = False
-        if cfg.monitor:
+        if not give_up and cfg.monitor:
             g = goals.predict_goals(schema, after_sg)
             sat = goals.satisfied(g, after_sg)
             st.goal_check = {"predicted": [f"{p}({', '.join(a)})" for p, a in g], "satisfied": sat}
             stop = sat
         emit(st)
-        if stop:
+        if give_up or stop:
             break
-        # a failed execute does not stop the loop: a goal-directed planner (saycan) re-proposes the
-        # same skill next iteration → recovery/replan, bounded by max_steps.
 
     pcres = monitor.evaluate(episode.eval_function, trace)
     result.pc = pcres.pc

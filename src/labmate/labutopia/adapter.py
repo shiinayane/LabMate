@@ -27,6 +27,28 @@ LABUTOPIA_DIR = Path(__file__).resolve().parents[2] / "labutopia"
 LEFT_SIGN = 1
 
 
+def _patch_omegaconf_resolver_once() -> None:
+    """Force ``OmegaConf.register_new_resolver(..., replace=True)`` process-wide.
+
+    LabUtopia's ``BaseController.__init__`` registers an ``eval`` resolver WITHOUT ``replace=True``
+    (``controllers/base_controller.py``), so the **2nd** controller built in one process raises
+    ``ValueError: resolver 'eval' is already registered``. We create a fresh controller per skill, so
+    any multi-skill sequence / retry would crash. We can't edit LabUtopia → make registration
+    idempotent here. Applied once; respects an explicit ``replace`` if a caller passes one.
+    """
+    from omegaconf import OmegaConf
+    if getattr(OmegaConf, "_labmate_resolver_patch", False):
+        return
+    _orig = OmegaConf.register_new_resolver
+
+    def _reg(name, resolver, *args, **kwargs):
+        kwargs.setdefault("replace", True)
+        return _orig(name, resolver, *args, **kwargs)
+
+    OmegaConf.register_new_resolver = staticmethod(_reg)
+    OmegaConf._labmate_resolver_patch = True
+
+
 class SimSession:
     """Owns the Isaac Sim lifecycle + a LabUtopia task/controller for one scene.
 
@@ -88,6 +110,7 @@ class SimSession:
 
         extensions.enable_extension("omni.physx.bundle")
 
+        _patch_omegaconf_resolver_once()              # make per-skill controller creation safe (#1)
         cfg = OmegaConf.load(str(LABUTOPIA_DIR / "config" / f"{self.scene_spec['labutopia_config']}.yaml"))
         cfg.max_episodes = 1
         cfg.collector.type = "mock"                   # W3: executor drives the scripted FSM, no HDF5
@@ -137,7 +160,8 @@ class SimSession:
         A **fresh controller is created per call** (its episode_count is cumulative, so a controller
         can't be reused for a sequence/retry — Explore finding). `task.reset()` hands the robot back to
         home between skills. Terminates on the controller's own `done`, NOT on episode_num — so this
-        works for multi-skill sequences and retries (W3).
+        works for multi-skill sequences and retries (W3). We do NOT call `task.on_task_complete` here:
+        its index/material cycling would drift `current_obj_idx` away from what `select()` pinned (#3).
         """
         from factories.controller_factory import create_controller
 
@@ -145,28 +169,33 @@ class SimSession:
             self._cfg, self._task, self._world, self._robot, self._app
         )
         controller = create_controller(controller_type or cfg.controller_type, cfg=cfg, robot=robot)
-        task.reset()
-        while app.is_running():
-            world.step(render=True)
-            if not world.is_playing():
-                continue
-            state = task.step()
-            if state is None:
-                continue
-            action, done, is_success = controller.step(state)
-            if action is not None:
-                robot.get_articulation_controller().apply_action(action)
-            if done:
-                try:
-                    task.on_task_complete(is_success)
-                except Exception:
-                    pass
-                try:
-                    controller.close()
-                except Exception:
-                    pass
-                return bool(is_success)
-        return False
+        self._controller = controller                 # tracked so close() can clean up (#4)
+        cap = int(getattr(cfg.task, "max_steps", 800)) + 200   # hard frame cap: never hang (#2)
+        try:
+            steps = 0
+            task.reset()
+            while app.is_running():
+                world.step(render=True)
+                if not world.is_playing():
+                    continue
+                state = task.step()
+                if state is None:
+                    continue
+                action, done, is_success = controller.step(state)
+                if action is not None:
+                    robot.get_articulation_controller().apply_action(action)
+                if done:
+                    return bool(is_success)
+                steps += 1
+                if steps > cap:                       # controller never reported done -> give up
+                    return False
+            return False
+        finally:
+            try:
+                controller.close()
+            except Exception:
+                pass
+            self._controller = None
 
     def select(self, target_name: Optional[str]) -> None:
         """Point the task at the object the planner grounded to (W2 multi-object pick)."""

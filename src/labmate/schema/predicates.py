@@ -97,3 +97,13 @@ def count(sg: SceneGraph, category: str, region: Optional[str] = None) -> int:
         objs = [o for o in objs if sg.has_relation("is_in", o.name, region)
                 or sg.has_relation("is_on", o.name, region)]
     return len(objs)
+
+
+@predicate("count_ge")
+def count_ge(sg: SceneGraph, category: str, region: Optional[str] = None, n: int = 1) -> bool:
+    """At least ``n`` objects of ``category`` (optionally in ``region``).
+
+    `count` returns an int that `evaluate` would `bool()`-collapse to "≥1"; use this to assert a real
+    quantity threshold in an eval_function (e.g. "bring **two**").
+    """
+    return count(sg, category, region) >= int(n)
