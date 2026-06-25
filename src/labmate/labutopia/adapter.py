@@ -13,6 +13,7 @@ LabUtopia exposes no "object held" flag, W1 derives ``held`` from the controller
 from __future__ import annotations
 
 import contextlib
+import copy
 import os
 import sys
 from pathlib import Path
@@ -106,6 +107,7 @@ class SimSession:
         self.headless = headless
         self.quiet = quiet                            # suppress Isaac/Kit log spam (carb/omni.log)
         self.objects = objects if objects is not None else self._objects_from_scene_spec(scene_spec)
+        self._objects0 = copy.deepcopy(self.objects)  # initial layout, restored by reset_scene()
         self.scene_flags = list(scene_flags or [])
         # interactive demo: keep ALL configured objects placed + visible (LabUtopia normally hides
         # every object except current_obj_idx). Re-applied after each task.reset().
@@ -330,6 +332,60 @@ class SimSession:
                 continue
             self._objutils.set_object_position(object_path=path, position=np.array(pose, dtype=float))
             set_prim_visibility(prim, True)
+
+    # ---- human scene edits (HRC: clear an obstacle, then re-run) --------
+    ASIDE = [0.42, 0.40, 0.82]                        # staging corner (best-effort; `remove` is cleaner)
+
+    def _spec(self, name: str) -> Optional[dict]:
+        return next((o for o in self.objects if o.get("name") == name), None)
+
+    def move_object(self, name: str, x: float, y: float, z: Optional[float] = None) -> list[float]:
+        """Relocate an object in the live sim AND its declared pose, so grounding re-reads it (Path A)."""
+        o = self._spec(name)
+        if o is None or not o.get("usd_path"):
+            raise KeyError(name)
+        if z is None:
+            z = float(o["pose"][2]) if o.get("pose") and len(o["pose"]) >= 3 else self.ASIDE[2]
+        pose = [float(x), float(y), float(z)]
+        import numpy as np
+        self._objutils.set_object_position(object_path=o["usd_path"], position=np.array(pose))
+        o["pose"] = pose                              # KEY: keep the declared-pose scene graph in sync
+        self.pump(20)
+        return pose
+
+    def move_aside(self, name: str) -> list[float]:
+        return self.move_object(name, self.ASIDE[0], self.ASIDE[1], self.ASIDE[2])
+
+    def _restore_objects(self) -> None:
+        """Restore the object set + poses + index to the initial layout (pure; undoes move/remove)."""
+        self.objects = copy.deepcopy(self._objects0)
+        placed = [o for o in self.objects if o.get("pose") and o.get("usd_path")]
+        self._index_by_name = {o["name"]: i for i, o in enumerate(placed)}
+        self._target_name = None
+        self._last_stop = None
+
+    def reset_scene(self) -> None:
+        """Put every object back at its initial pose (incl. ones the human moved/removed)."""
+        self._restore_objects()
+        self.show_all_objects()                       # places all at restored poses + visible
+        self.pump(20)
+
+    def remove_object(self, name: str) -> None:
+        """Take an object off the table: hide + teleport far, and drop it from the scene graph."""
+        o = self._spec(name)
+        if o is None:
+            raise KeyError(name)
+        path = o.get("usd_path")
+        if path:
+            import numpy as np
+            from isaacsim.core.utils.prims import set_prim_visibility
+            self._objutils.set_object_position(object_path=path, position=np.array([10.0, 10.0, 0.1]))
+            prim = self._stage.GetPrimAtPath(path)
+            if prim.IsValid():
+                set_prim_visibility(prim, False)
+        self.objects = [x for x in self.objects if x.get("name") != name]   # excluded from grounding/monitor
+        self._index_by_name.pop(name, None)           # do NOT reindex (current_obj_idx is fixed)
+        self.pump(10)
 
     def pump(self, frames: int = 60) -> None:
         """Idle-render N frames (keep the viewport alive between commands, let physics settle)."""

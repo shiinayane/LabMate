@@ -91,8 +91,17 @@ Env injection (`LD_PRELOAD`, EULA) is automatic under the user's zsh `uv run` �
 #   > pick the left conical bottle     -> ACT, robot picks conical_bottle02
 #   > pick a conical bottle            -> ASK "which?"  (answer at the prompt) -> ACT
 #   > pick the hazardous beaker        -> REFUSE [S3], nothing runs
-#   reset (re-home + re-show) | quit
+#   > pick the left conical bottle     -> ASK (B1a) "beaker1 is on the path …"
+#       ↳ remove beaker1               -> scene re-read, path clear -> ACT grasp  (HRC: clear → proceed)
+#   commands: move <obj> <x> <y> | move <obj> aside | remove <obj> | reset | quit
+#   flags: --no-clutter (off B1a) | --no-runtime-stop (off B1b)
 ```
+
+**Human-robot collaboration (Path A).** When the gate ASKs (B1a clutter) or stops (B1b disturbance), the
+human edits the scene — `move`/`remove` an obstacle — and re-issues (or answers the ASK inline with a
+`move`/`remove`, which re-gates the same turn). `SimSession.move_object` relocates the prim **and updates
+its declared pose**, so `build_scene_graph` re-grounds against the new layout. (Mouse-drag manipulation in
+the viewport is Path B — needs a background render thread + live-pose reading; deferred, docs/12.)
 
 `scripts/interactive.py` (REPL) + `src/labmate/interactive.py` (`run_turn`, reuses the loop's
 `gate_traced`/`_propose`/`resolve_with_answer` + the trace). The sim is brought up **once** and stays

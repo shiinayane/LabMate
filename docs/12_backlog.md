@@ -63,9 +63,17 @@ limitation to state honestly.
   needing their own task (DualObjectTask/CleanBeakerTask); our single PickTask can't drive them. To do
   real `place` (and thus drop-and-pick-another instead of `reset`), wire a DualObjectTask path. Until
   then, the gripper-full case requires `reset` between picks.
+- **HRC scene editing — Path A (DONE, 2026-06).** When the robot ASKs/stops, the human clears the
+  obstacle: REPL `move <obj> <x> <y>` / `move <obj> aside` / `remove <obj>` (`adapter.move_object`/
+  `remove_object`) relocate the prim AND update its declared pose, so `build_scene_graph` re-grounds
+  against the new layout. Answering an ASK inline with a `move`/`remove` re-gates the same turn
+  (`interactive.RETRY`). Verified: `pick the left beaker` → ASK → `move conical_bottle02 aside` →
+  `path_blockers` flips to `[]` → ACT. **Path B (deferred):** mouse-drag in the Kit viewport — needs
+  the **B3** background render thread (live, interactive window) + `build_scene_graph` switched to live
+  `get_geometry_center` poses.
 - **B3 · Blocking REPL.** The viewport is static while you type (live only during robot motion). A
   background-input thread + a main-thread render loop would keep the window always live (the sim API
-  must stay on the main thread).
+  must stay on the main thread). Prerequisite for HRC Path B (mouse manipulation).
 - **B4 · `reset` is symbolic + re-home.** It clears the tracked `held` and re-shows objects; it does
   not model physically placing the held object down.
 

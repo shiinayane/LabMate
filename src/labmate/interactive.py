@@ -22,6 +22,38 @@ from .trace import GroundingTrace, StepTrace
 # skills whose LabUtopia controller runs standalone via SimSession.run_skill (audit/Explore finding)
 SIM_DRIVABLE = {"pick"}
 
+# ask_fn may return this to mean "I edited the scene (moved/removed an obstacle) — re-gate the SAME
+# instruction against the new layout" (HRC: clear the path, then proceed). Distinct from a re-target
+# answer (an object name) and from abandon (empty).
+RETRY = "\x00retry"
+
+
+def parse_edit(line: str, known_names):
+    """Parse a human scene-edit command (HRC: clear an obstacle, then re-run).
+
+    ``move <obj> <x> <y>`` | ``move <obj> aside`` | ``remove <obj>`` →
+    ``("move",name,x,y)`` / ``("move_aside",name)`` / ``("remove",name)``; bad input → ``("error",msg)``;
+    a non-edit line → ``None`` (the REPL then treats it as an instruction).
+    """
+    tok = line.split()
+    if not tok or tok[0] not in ("move", "remove"):
+        return None
+    if len(tok) < 2:
+        return ("error", f"usage: {tok[0]} <object> ...")
+    name = tok[1]
+    if name not in known_names:
+        return ("error", f"unknown object {name!r}")
+    if tok[0] == "remove":
+        return ("remove", name)
+    if len(tok) == 3 and tok[2] == "aside":
+        return ("move_aside", name)
+    if len(tok) >= 4:
+        try:
+            return ("move", name, float(tok[2]), float(tok[3]))
+        except ValueError:
+            pass
+    return ("error", "usage: move <object> <x> <y> | move <object> aside")
+
 
 @dataclass
 class TurnResult:
@@ -74,13 +106,14 @@ def run_turn(instruction: str, cfg, backend, parser,
         if decision.kind == "ASK":
             res.asked = True
             emit(st)
-            if res.ask_turns < 2:
-                answer = ask_fn(decision.question)
-                if answer:
-                    schema = loop.resolve_with_answer(schema, answer)
-                    res.ask_turns += 1
-                    history.append(("ask", answer))
-                    continue
+            answer = ask_fn(decision.question)
+            if answer == RETRY:                         # human cleared the scene -> re-gate, same schema
+                continue
+            if answer and res.ask_turns < 2:
+                schema = loop.resolve_with_answer(schema, answer)
+                res.ask_turns += 1
+                history.append(("ask", answer))
+                continue
             res.reason = decision.question
             break
 

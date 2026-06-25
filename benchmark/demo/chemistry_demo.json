@@ -6,7 +6,7 @@
     {"name": "conical_bottle03", "usd_path": "/World/conical_bottle03", "category": "conical_flask",
      "pose": [0.28, -0.12, 0.82], "flags": {"is_graspable": true}},
     {"name": "beaker1", "usd_path": "/World/beaker1", "category": "beaker",
-     "pose": [0.36, 0.22, 0.82], "flags": {"is_graspable": true, "is_fragile": true}},
+     "pose": [0.14, 0.09, 0.82], "flags": {"is_graspable": true, "is_fragile": true}},
     {"name": "beaker2", "usd_path": "/World/beaker2", "category": "beaker",
      "pose": [0.36, -0.22, 0.82], "flags": {"is_graspable": true, "is_hazardous": true}}
   ],

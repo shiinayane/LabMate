@@ -19,7 +19,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from labmate.interactive import run_turn                     # noqa: E402
+from labmate.interactive import RETRY, parse_edit, run_turn  # noqa: E402
 from labmate.parser.rule_parser import RuleParser            # noqa: E402
 from labmate.planner.loop import PlannerConfig               # noqa: E402
 from labmate.trace import render_step                        # noqa: E402
@@ -32,6 +32,24 @@ def _load_objects(path: str | None):
     if isinstance(data, dict):
         return data.get("objects"), data.get("scene_flags")
     return data, None
+
+
+def apply_edit(session, edit) -> bool:
+    """Apply a parsed move/remove edit to the live session; print the result. False on error."""
+    kind = edit[0]
+    if kind == "error":
+        print(f"  {edit[1]}", flush=True)
+        return False
+    if kind == "remove":
+        session.remove_object(edit[1])
+        print(f"(removed {edit[1]})", flush=True)
+    elif kind == "move_aside":
+        p = session.move_aside(edit[1])
+        print(f"(moved {edit[1]} aside -> {p[0]:.2f},{p[1]:.2f})", flush=True)
+    else:
+        p = session.move_object(edit[1], edit[2], edit[3])
+        print(f"(moved {edit[1]} -> {p[0]:.2f},{p[1]:.2f})", flush=True)
+    return True
 
 
 def main() -> None:
@@ -70,9 +88,20 @@ def main() -> None:
         print(f"\n=== LabMate interactive demo ({cfg.name}) ===", flush=True)
         print(f"objects in scene: {', '.join(names)}", flush=True)
         print(f"safety: B1a clutter-gate={b1a}  B1b runtime-stop={b1b}", flush=True)
-        print("type an instruction (e.g. 'pick the left conical bottle'); 'reset' / 'quit'.\n", flush=True)
+        print("commands: <instruction> | move <obj> <x> <y> | move <obj> aside | remove <obj> | "
+              "reset | quit\n", flush=True)
 
-        ask_fn = lambda q: input(f"  ↳ {q}\n  > ").strip()
+        def ask_fn(q):
+            # at an ASK prompt the human may answer (re-target) OR clear the scene (move/remove);
+            # an edit is applied immediately and we re-gate the same instruction (HRC).
+            line = input(f"  ↳ {q}\n  > ").strip()
+            edit = parse_edit(line, {o["name"] for o in session.objects})
+            if edit is not None:
+                apply_edit(session, edit)
+                session.pump(20)
+                return RETRY
+            return line
+
         on_step = lambda st: print(render_step(st), flush=True)
 
         while True:
@@ -86,9 +115,13 @@ def main() -> None:
                 break
             if instr == "reset":
                 backend._held = None
-                session.show_all_objects()
-                session.pump()
-                print("(reset: gripper cleared, objects re-shown)", flush=True)
+                session.reset_scene()                 # restore initial layout (undo move/remove)
+                print("(reset: gripper cleared, objects restored to initial positions)", flush=True)
+                continue
+            edit = parse_edit(instr, {o["name"] for o in session.objects})
+            if edit is not None:                          # human clears/relocates an obstacle (HRC)
+                apply_edit(session, edit)
+                session.pump(20)
                 continue
             res = run_turn(instr, cfg, backend, parser, ask_fn, on_step=on_step)
             if res.stopped:                           # B1b: runtime monitor halted the motion
