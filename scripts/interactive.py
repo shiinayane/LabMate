@@ -42,6 +42,8 @@ def main() -> None:
     ap.add_argument("--out", default=str(REPO / "outputs" / "labmate" / "_interactive"))
     ap.add_argument("--headless", action="store_true")
     ap.add_argument("--verbose-sim", action="store_true", help="don't suppress Isaac/Kit logs")
+    ap.add_argument("--no-runtime-stop", action="store_true",
+                    help="disable the B1b runtime disturbance monitor")
     args = ap.parse_args()
 
     cfg = PlannerConfig.load(args.planner)
@@ -54,7 +56,8 @@ def main() -> None:
 
     session = SimSession(scene_spec, run_dir=str(Path(args.out) / "labutopia"), headless=args.headless,
                          objects=objects, scene_flags=scene_flags, multi_visible=True,
-                         quiet=not args.verbose_sim).start()
+                         quiet=not args.verbose_sim,
+                         monitor_disturbance=not args.no_runtime_stop).start()
     try:
         backend = SimBackend(session)
         names = [o["name"] for o in session.objects if o.get("pose")]
@@ -81,6 +84,8 @@ def main() -> None:
                 print("(reset: gripper cleared, objects re-shown)", flush=True)
                 continue
             res = run_turn(instr, cfg, backend, parser, ask_fn, on_step=on_step)
+            if res.stopped:                           # B1b: runtime monitor halted the motion
+                print(f"⚠ {res.reason} — retry, pick another, or move it (then 'reset').", flush=True)
             kind = res.decisions[-1].kind if res.decisions else "?"
             print(f"=> {kind}  executed={res.executed} held={res.held} "
                   f"resolved={res.resolved_target}" + (f" reason={res.reason}" if res.reason else ""),

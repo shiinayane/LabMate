@@ -6,24 +6,56 @@
 
 ## High-value
 
-### B1 · Failure-aware escalation — hand control back to the human on failure / infeasibility
+### B1 · Failure-aware feasibility & escalation (the framework's core pattern: clarify/escalate, don't blunder on)
+
 **Observed (2026-06):** in the interactive demo, `pick the left beaker` *executed* (the RMPFlow
-obstacle-avoidance arm motion ran) but **did not grasp** — the controller returned `is_success=False`.
-The demo did a single attempt, reported `executed=1 ok=False`, and moved on with **no recourse**.
-Separately, picking with a full gripper yields a bare `no_feasible_skill` token.
+obstacle-avoidance arm motion ran) but **did not grasp** (`is_success=False`); the demo reported
+`executed=1 ok=False` and moved on with no recourse. Separately, a full-gripper pick yields a bare
+`no_feasible_skill` token.
 
-**Improvement:** treat execution failure and infeasibility as *interaction points*, not dead ends:
-- On `ok==False` (grasp slipped / avoidance blocked the approach): **ASK** the human — "I couldn't
-  grasp `<obj>` — retry / pick a different one / abort?" — instead of silently failing.
-- On `no_feasible_skill` / `s_aff==0`: surface a **human-readable reason** ("I'm holding `<x>`; say
-  `reset` or place it first" — derived from the trace's `aff_failed`), not the raw token.
-- Wire the existing `max_retries` budget into the **interactive** `run_turn` (today it does one
-  attempt: `if sat or not ok: break`); the benchmark loop already retries.
-- Deeper: **closed-loop grasp verification** from sim GT (did the prim actually lift?) rather than
-  trusting the controller's `is_success`; ties to the deferred geometric held-check (B5).
+**Key realisation (the hard part).** The deterministic `s_aff` checks only **symbolic** preconditions
+(gripper empty, graspable) — it **does not see the motion path**. RMPFlow is a *reactive* policy (local
+obstacle avoidance, no global plan): for a target the gate has *approved* (`s_aff=1`), nearby objects
+can still make it weave, stall in a local minimum, or throw a dangerous avoidance motion. So the danger
+arises **during motion, on gate-approved actions** — a layer between the symbolic gate and the motor
+controller that the framework does not model. (docs/04 designed `s_aff` as a *geometric*-feasibility
+term à la Text2Motion; the implementation reduced it to symbolic preconditions.) Predicting RMPFlow
+behaviour ≈ running a motion planner — genuinely hard. Three layers, escalating cost:
 
-This is the general pattern the framework is *about* (clarify/escalate rather than blunder on), so it
-is the most on-thesis backlog item — worth a dedicated mini-plan.
+- **B1a · Conservative, path-aware clutter gate (DONE, 2026-06).** Don't predict success; be
+  *conservative* and check the **approach path**, not just the target's neighbours. The gate **ASKs**
+  (attribution `feasibility`) when either: an object lies in the straight corridor `robot → target`
+  within `cfg.corridor_radius` (`SceneGraph.approach_blockers`), or the grasp column is crowded
+  (nearest neighbour < `cfg.clearance`, `nearest_other`/`clearance`). Config switch `clutter_check` (ON
+  for `scene_grounded`/`saycan`, OFF for the weak baselines), default OFF. The corridor check was added
+  after the nearest-neighbour-only version passed `pick the left beaker` (neighbour 12.8 cm) yet the arm
+  hit `conical_bottle02` 7.4 cm off the approach line — now correctly ASKed. Over-refuses by design (a
+  clarification, not a guarantee). The REPL also surfaces `no_feasible_skill` as the unmet preconditions.
+  **Refinements still open:** size-aware radius (gripper width + object radii vs centre distance);
+  live end-effector start instead of the robot base; 3-D / true swept-volume. The real safety floor is
+  still **B1b** runtime stop (no pre-flight check is complete against a reactive controller).
+- **B1b · Runtime disturbance monitor (DONE v1, 2026-06).** The real safety floor: watch the sim
+  *during* execution and **stop the moment a non-target object is disturbed**, then hand to the human.
+  `safety/runtime.py::DisturbanceMonitor` (pure) is fed each object's `get_geometry_center` per frame by
+  `adapter._run_skill_impl`; it baselines **after a settle delay** (`settle_frames`, the pre-settle drop
+  is jitter, not contact) and trips when a non-target moves past `disturb_threshold` (default 0.03 m,
+  excluding the grasp target). On a hit, `run_skill` stops and records `_last_stop`; `SimBackend.execute`
+  surfaces it as `last_outcome`; `interactive.run_turn` ends the turn with `stopped` + a readable reason
+  ("bumped X"). **Verified in sim:** a clean isolated pick disturbs 0.0 cm (no false stop); the cramped
+  `beaker1` pick halts the instant `conical_bottle02` crosses 3 cm. Switch: `SimSession(
+  monitor_disturbance=...)`, on by default for the demo (`--no-runtime-stop` to disable). Reactive —
+  bounds damage, not zero-contact (that's why **B1a** stays as the preventive layer). **Deferred:** finger
+  contact-sensor signal (catch contact *before* the object moves); joint-effort/EE-velocity (saturate —
+  weak); a formal ASK-loop on stop; benchmark-fairness wiring (runtime-stop ON only for framework rows).
+- **B1c · Geometric/motion-feasibility prediction (research, defer).** Actually validate a
+  collision-free trajectory (plan with cuMotion/Lula, or sandbox-roll-out RMPFlow) before committing,
+  feeding a true geometric term into `s_aff`. RMPFlow being reactive (no trajectory to validate) is the
+  hard bit.
+
+**Pragmatic safety stance:** full pre-flight prediction is out of reach (= motion planning); the real
+strategy is **B1a (refuse risky/cluttered grasps) + B1b (stop fast when it goes wrong)**, B1c as
+research. The demo currently dodges this purely at the **data level** (objects spaced apart) — a
+limitation to state honestly.
 
 ## Interactive demo limitations (current cut)
 

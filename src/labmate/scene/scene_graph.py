@@ -91,6 +91,20 @@ def _xy(o: Optional["SceneObject"]) -> Optional[tuple[float, float]]:
     return float(o.pose[0]), float(o.pose[1])
 
 
+def _point_to_segment(p: tuple[float, float], a: tuple[float, float],
+                      b: tuple[float, float]) -> tuple[float, float]:
+    """Perpendicular distance from `p` to segment `a→b` + the clamped projection param t∈[0,1]."""
+    ax, ay = a
+    bx, by = b
+    px, py = p
+    dx, dy = bx - ax, by - ay
+    L2 = dx * dx + dy * dy
+    t = (((px - ax) * dx + (py - ay) * dy) / L2) if L2 else 0.0
+    t = max(0.0, min(1.0, t))
+    cx, cy = ax + t * dx, ay + t * dy
+    return math.hypot(px - cx, py - cy), t
+
+
 def _z(o: Optional["SceneObject"]) -> Optional[float]:
     if o is None or not o.pose or len(o.pose) < 3:
         return None
@@ -204,6 +218,59 @@ class SceneGraph(BaseModel):
             return None
         rx, ry = self.frame.robot_xy[0], self.frame.robot_xy[1]
         return math.hypot(xy[0] - rx, xy[1] - ry)
+
+    def nearest_other(self, name: str) -> Optional[tuple[str, float]]:
+        """Closest OTHER posed object to ``name`` and its xy distance (None if no posed neighbour).
+
+        Used by the conservative clutter gate (B1a): a small clearance means a grasp would force the
+        reactive motion controller to weave through nearby objects — risky, so the gate ASKs instead.
+        """
+        xy = _xy(self.get(name))
+        if xy is None:
+            return None
+        best: Optional[tuple[str, float]] = None
+        for other, o in self.objects.items():
+            if other == name:
+                continue
+            oxy = _xy(o)
+            if oxy is None:
+                continue
+            d = math.hypot(xy[0] - oxy[0], xy[1] - oxy[1])
+            if best is None or d < best[1]:
+                best = (other, d)
+        return best
+
+    def clearance(self, name: str) -> Optional[float]:
+        """xy distance to the nearest other posed object (None if none)."""
+        n = self.nearest_other(name)
+        return n[1] if n else None
+
+    def approach_blockers(self, target: str, radius: float,
+                          t_min: float = 0.05, t_max: float = 0.97) -> list[tuple[str, float, float]]:
+        """Other posed objects sitting in the straight approach corridor robot_xy → target (B1a).
+
+        Returns ``(name, lateral_dist, t)`` for each object within ``radius`` of the segment from the
+        robot base to the target, with projection ``t_min < t < t_max`` (so the robot end and the target
+        end are excluded). Sorted nearest-first. ``[]`` if there is no frame or the target has no pose.
+        This is *path*-aware (an object the arm would sweep past), unlike `nearest_other` which only
+        measures crowding around the target. 2-D, straight-line, robot-base start — conservative, not a
+        guarantee (the real backstop is a runtime contact stop, docs/12 B1b).
+        """
+        txy = _xy(self.get(target))
+        if self.frame is None or txy is None:
+            return []
+        robot = (self.frame.robot_xy[0], self.frame.robot_xy[1])
+        hits: list[tuple[str, float, float]] = []
+        for name, o in self.objects.items():
+            if name == target:
+                continue
+            oxy = _xy(o)
+            if oxy is None:
+                continue
+            d, t = _point_to_segment(oxy, robot, txy)
+            if d < radius and t_min < t < t_max:
+                hits.append((name, d, t))
+        return sorted(hits, key=lambda h: h[1])
 
     def has_relation(self, rel: str, a: str, b: str) -> bool:
         edges = self.relations.get(rel, set())

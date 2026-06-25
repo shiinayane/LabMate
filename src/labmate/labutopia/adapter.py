@@ -98,7 +98,9 @@ class SimSession:
 
     def __init__(self, scene_spec: dict, run_dir: str, headless: bool = True,
                  objects: Optional[list[dict]] = None, scene_flags: Optional[list[str]] = None,
-                 multi_visible: bool = False, quiet: bool = False):
+                 multi_visible: bool = False, quiet: bool = False,
+                 monitor_disturbance: bool = False, disturb_threshold: float = 0.03,
+                 settle_frames: int = 30):
         self.scene_spec = scene_spec
         self.run_dir = run_dir
         self.headless = headless
@@ -108,6 +110,12 @@ class SimSession:
         # interactive demo: keep ALL configured objects placed + visible (LabUtopia normally hides
         # every object except current_obj_idx). Re-applied after each task.reset().
         self.multi_visible = multi_visible
+        # B1b runtime safety: stop a skill the moment a NON-target object is disturbed (docs/12).
+        self.monitor_disturbance = monitor_disturbance
+        self.disturb_threshold = disturb_threshold
+        self.settle_frames = settle_frames
+        self._target_name: Optional[str] = None       # grasp target (set by select), excluded from monitor
+        self._last_stop: Optional[dict] = None         # {"object", "disp"} of the last runtime stop
         self.robot_xy = [0.0, 0.0]
         self._index_by_name: dict[str, int] = {}
         self._app = None
@@ -243,6 +251,8 @@ class SimSession:
         controller = create_controller(controller_type or cfg.controller_type, cfg=cfg, robot=robot)
         self._controller = controller                 # tracked so close() can clean up (#4)
         cap = int(getattr(cfg.task, "max_steps", 800)) + 200   # hard frame cap: never hang (#2)
+        self._last_stop = None
+        monitor = self._make_monitor()                # B1b: None unless monitor_disturbance
         try:
             steps = 0
             task.reset()
@@ -255,6 +265,15 @@ class SimSession:
                 state = task.step()
                 if state is None:
                     continue
+                if monitor is not None:               # B1b runtime disturbance stop
+                    pos = self._object_positions()
+                    if steps == self.settle_frames:
+                        monitor.set_baseline(pos)
+                    elif monitor.ready:
+                        hit = monitor.update(pos)
+                        if hit is not None:
+                            self._last_stop = {"object": hit[0], "disp": hit[1]}
+                            return False              # stop the skill, hand back to the human
                 action, done, is_success = controller.step(state)
                 if action is not None:
                     robot.get_articulation_controller().apply_action(action)
@@ -270,6 +289,26 @@ class SimSession:
             except Exception:
                 pass
             self._controller = None
+
+    def _make_monitor(self):
+        """A DisturbanceMonitor over the configured objects, or None when disabled (B1b)."""
+        if not self.monitor_disturbance:
+            return None
+        from ..safety.runtime import DisturbanceMonitor
+        return DisturbanceMonitor(self._target_name, self.disturb_threshold)
+
+    def _object_positions(self) -> dict:
+        """Current world centre of each configured object (physics-tracking, B1b monitor input)."""
+        out: dict = {}
+        for o in self.objects:
+            path = o.get("usd_path")
+            if not path:
+                continue
+            try:
+                out[o["name"]] = [float(x) for x in self._objutils.get_geometry_center(object_path=path)]
+            except Exception:
+                out[o["name"]] = None
+        return out
 
     def show_all_objects(self) -> None:
         """Place ALL configured objects at their declared poses and make them visible (demo).
@@ -304,6 +343,7 @@ class SimSession:
 
     def select(self, target_name: Optional[str]) -> None:
         """Point the task at the object the planner grounded to (W2 multi-object pick)."""
+        self._target_name = target_name               # excluded from the B1b disturbance monitor
         if self._task is None or target_name is None:
             return
         idx = self._index_by_name.get(target_name)

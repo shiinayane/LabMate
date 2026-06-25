@@ -31,6 +31,7 @@ class TurnResult:
     executed: int = 0
     refused: bool = False
     asked: bool = False
+    stopped: bool = False                # B1b: execution was halted by the runtime safety monitor
     ask_turns: int = 0
     reason: Optional[str] = None
     resolved_target: Optional[str] = None
@@ -86,6 +87,10 @@ def run_turn(instruction: str, cfg, backend, parser,
         if decision.kind == "REFUSE":
             res.refused = True
             res.reason = decision.reason
+            if decision.reason == "no_feasible_skill" and st.candidates:
+                fails = sorted({f for c in st.candidates for f in c.aff_failed})
+                if fails:                              # human-readable: name the unmet preconditions
+                    res.reason = f"can't do that — unmet precondition(s): {', '.join(fails)}"
             emit(st)
             break
 
@@ -104,9 +109,16 @@ def run_turn(instruction: str, cfg, backend, parser,
         history.append(("act", cand.as_text(), ok))
         after_sg = backend.scene_graph()
         res.held = after_sg.held
-        st.execution = {"ran": True, "ok": ok, "target": cand.args.get("target")}
+        outcome = getattr(backend, "last_outcome", None) or {}
+        st.execution = {"ran": True, "ok": ok, "target": cand.args.get("target"),
+                        "stopped": outcome.get("stopped"), "disturbed": outcome.get("disturbed")}
         st.scene_delta = {"held": after_sg.held,
                           "relations_added": sorted(list(r) for r in loop._rel_set(after_sg) - before_rel)}
+        if outcome.get("stopped"):                  # B1b: halted on disturbance -> hand to the human
+            res.stopped = True
+            res.reason = f"stopped — bumped {outcome.get('disturbed')}"
+            emit(st)
+            break
         g = goals.predict_goals(schema, after_sg)
         sat = goals.satisfied(g, after_sg)
         st.goal_check = {"predicted": [f"{p}({', '.join(a)})" for p, a in g], "satisfied": sat}

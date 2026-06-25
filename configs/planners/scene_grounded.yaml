@@ -8,5 +8,8 @@ beta: 1.0
 affordance: true
 clarification: true     # W1 stub (no-op); real router in W3
 safety: true            # W1 stub (no-op); real shield in W3
+clutter_check: true     # B1a: ASK when a target is hemmed in / blocked on the approach path
+clearance: 0.06         # grasp-column: only a TIGHT neighbour (~gripper width); higher cascades
+corridor_radius: 0.08   # object this close to the robot->target approach line blocks it (m)
 monitor: true
 max_steps: 8

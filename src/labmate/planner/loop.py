@@ -41,6 +41,10 @@ class PlannerConfig:
     affordance: bool = True          # gate uses the affordance filter
     clarification: bool = True       # gate consults the clarification router
     safety: bool = True              # gate consults the safety shield
+    clutter_check: bool = False      # B1a: ASK when the target is hemmed in (geometric feasibility)
+    clearance: float = 0.06          # grasp-column: only flag a TIGHT neighbour (~gripper width); a
+    #                                  larger value cascades (every adjacent pair in a spread scene)
+    corridor_radius: float = 0.08    # an object this close to the robot→target approach line blocks it
     monitor: bool = True             # closed-loop goal check / stop condition
     max_steps: int = 8
     max_retries: int = 1             # closed-loop retries on execution failure (recovery/replan)
@@ -109,7 +113,7 @@ def gate(cands: list[Candidate], schema: InstructionSchema, sg: SceneGraph,
 def gate_traced(cands: list[Candidate], schema: InstructionSchema, sg: SceneGraph,
                 cfg: PlannerConfig) -> tuple[Decision, list[CandidateScore], dict]:
     """``gate`` + the candidate scores and per-stage gate verdicts it reasoned over (07 trace)."""
-    gate_info: dict = {"router": None, "shield": None, "affordance": None}
+    gate_info: dict = {"router": None, "shield": None, "feasibility": None, "affordance": None}
 
     def key(c: Candidate) -> float:
         a = affordance.s_aff(c, sg) if cfg.affordance else 1.0
@@ -150,6 +154,22 @@ def gate_traced(cands: list[Candidate], schema: InstructionSchema, sg: SceneGrap
             return Decision("ASK", question=v.question, attribution="safety"), cand_scores, gate_info
         care = (v.kind == "SAFE_SLOW")
 
+    # B1a conservative clutter gate: an object on the approach path (or crowding the grasp column)
+    # would force risky reactive avoidance -> ASK the human instead of attempting it.
+    if cfg.clutter_check:
+        tgt = best.args.get("target") or best.args.get("src")
+        near = sg.nearest_other(tgt) if tgt else None
+        clr = near[1] if near else None
+        blockers = sg.approach_blockers(tgt, cfg.corridor_radius) if tgt else []
+        grasp_crowded = clr is not None and clr < cfg.clearance
+        cluttered = bool(blockers) or grasp_crowded
+        gate_info["feasibility"] = {"checked": True, "target": tgt, "clearance": clr,
+                                    "blocker": (near[0] if near else None),
+                                    "path_blockers": [b[0] for b in blockers], "cluttered": cluttered}
+        if cluttered:
+            q = _clutter_question(tgt, blockers, near, cfg, sg)
+            return Decision("ASK", question=q, attribution="feasibility"), cand_scores, gate_info
+
     refiltered = False
     if cfg.affordance and affordance.s_aff(best, sg) == 0.0:
         feasible = [c for c in cands if affordance.feasible(c, sg)]
@@ -163,6 +183,28 @@ def gate_traced(cands: list[Candidate], schema: InstructionSchema, sg: SceneGrap
     gate_info["affordance"] = {"applied": cfg.affordance, "refiltered": refiltered}
 
     return Decision("ACT", skill=best, care=care), cand_scores, gate_info
+
+
+def _clutter_question(target: str, blockers: list, near: Optional[tuple],
+                      cfg: "PlannerConfig", sg: SceneGraph) -> str:
+    """Ask the human to clear/re-target when `target`'s approach path or grasp column is blocked (B1a)."""
+    if blockers:
+        bname, bdist, _ = blockers[0]
+        lead = f"{bname} is on the path to {target} ({bdist * 100:.0f}cm) — clear it or pick another?"
+    else:
+        bn, bd = near
+        lead = (f"{target} is hemmed in by {bn} ({bd * 100:.0f}cm, need "
+                f"{cfg.clearance * 100:.0f}cm) — clear space or pick another?")
+    o = sg.get(target)
+    isolated = []
+    if o is not None:                                # same-category objects with a clear path + column
+        for n in sg.names_of_category(o.category):
+            if n == target:
+                continue
+            if not sg.approach_blockers(n, cfg.corridor_radius) and (sg.clearance(n) or 1e9) >= cfg.clearance:
+                isolated.append(n)
+    alt = f" Isolated option(s): {', '.join(isolated)}." if isolated else ""
+    return lead + alt
 
 
 def _propose(schema, sg, history, cfg: PlannerConfig, client) -> list[Candidate]:

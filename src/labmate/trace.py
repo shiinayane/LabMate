@@ -88,13 +88,19 @@ def render_step(st: StepTrace) -> str:
         out.append("  candidates: (none)")
 
     gate = st.gate or {}
-    r, s, a = gate.get("router"), gate.get("shield"), gate.get("affordance")
+    r, s, fz, a = gate.get("router"), gate.get("shield"), gate.get("feasibility"), gate.get("affordance")
     if r:
         out.append(f"  gate.router    : {r.get('token')} ({r.get('reason')})")
     if s:
         rule = f" rule={s.get('rule')}" if s.get("rule") else ""
         reason = f" reason={s.get('reason')}" if s.get("reason") else ""
         out.append(f"  gate.shield    : {s.get('kind')} [{s.get('tier')}]{rule}{reason}")
+    if fz:
+        clr = fz.get("clearance")
+        clr_s = f"{clr * 100:.0f}cm" if isinstance(clr, (int, float)) else "n/a"
+        pb = fz.get("path_blockers") or []
+        out.append(f"  gate.feasibility: target={fz.get('target')} clearance={clr_s} "
+                   f"path_blockers={pb} cluttered={fz.get('cluttered')}")
     if a:
         out.append(f"  gate.affordance: applied={a.get('applied')} refiltered={a.get('refiltered')}")
 

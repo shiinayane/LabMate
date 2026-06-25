@@ -30,6 +30,7 @@ class SimBackend:
         self._attempts = 0
         self._held = None
         self._relations: dict[str, set[tuple[str, str]]] = {k: set() for k in self._REL_KEYS}
+        self.last_outcome: dict = {"ok": None, "stopped": False, "disturbed": None}
 
     def scene_graph(self) -> SceneGraph:
         sg = self.session.build_scene_graph(held=self._held)
@@ -43,6 +44,9 @@ class SimBackend:
             return False                              # induced first-attempt failure (no sim) -> retry
         self.session.select(candidate.args.get("target"))   # W2: pick the grounded object
         raw_ok = self.session.run_skill(candidate.skill.controller)
+        stop = getattr(self.session, "_last_stop", None)     # B1b runtime disturbance stop
+        self.last_outcome = {"ok": raw_ok, "stopped": stop is not None,
+                             "disturbed": (stop["object"] if stop else None)}
         if raw_ok:
             # fold the skill's symbolic effects into the tracked state (held / relations)
             tmp = self.scene_graph()
