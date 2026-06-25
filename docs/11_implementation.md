@@ -80,6 +80,26 @@ uv run python scripts/run_episode.py --episode ... --planner configs/planners/ll
 
 Env injection (`LD_PRELOAD`, EULA) is automatic under the user's zsh `uv run` — see docs/08.
 
+### Interactive demo (chat → live sim)
+
+```bash
+# all demo objects co-present + visible; type instructions, the robot picks the grounded one.
+# Drop --headless to watch on a VNC desktop (set DISPLAY=:42 from an SSH shell).
+./scripts/labrun python scripts/interactive.py --objects benchmark/demo/chemistry_demo.json [--headless]
+#   > pick the left conical bottle     -> ACT, robot picks conical_bottle02
+#   > pick a conical bottle            -> ASK "which?"  (answer at the prompt) -> ACT
+#   > pick the hazardous beaker        -> REFUSE [S3], nothing runs
+#   reset (re-home + re-show) | quit
+```
+
+`scripts/interactive.py` (REPL) + `src/labmate/interactive.py` (`run_turn`, reuses the loop's
+`gate_traced`/`_propose`/`resolve_with_answer` + the trace). The sim is brought up **once** and stays
+persistent; `SimSession(multi_visible=True)` keeps **all** configured objects placed + visible
+(`show_all_objects()` re-applied after each `task.reset()`, since LabUtopia hides every object but
+`current_obj_idx`). **Robot motion is `pick`-only** — `place`/`pour`/`clean` are LabUtopia composite
+controllers needing their own task (DualObjectTask/CleanBeakerTask); other intents show the decision +
+trace but don't drive the robot. Blocking REPL (no live-render thread yet).
+
 ## Key implementation decisions
 
 - **Schemas = pydantic v2** (not dataclasses); JSON Schema is exported from the models (docs/02 note).

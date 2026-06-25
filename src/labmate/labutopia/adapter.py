@@ -12,12 +12,49 @@ LabUtopia exposes no "object held" flag, W1 derives ``held`` from the controller
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from pathlib import Path
 from typing import Optional
 
 from ..scene.scene_graph import SceneGraph
+
+
+@contextlib.contextmanager
+def _redirect_fds_to(path: str):
+    """Redirect OS-level stdout+stderr (fd 1/2) to a file, then restore.
+
+    Isaac/Kit prints its startup banner + RMPFlow config via C-level stdio straight to fd 1, which a
+    Python ``sys.stdout`` swap cannot catch. We dup the fds to a log file for the duration so the
+    interactive REPL stays clean; the noise is still on disk for debugging.
+    """
+    def _libc_flush():
+        # flush C-level stdio so buffered Kit output lands in the sink, not on the restored terminal
+        try:
+            import ctypes
+            ctypes.CDLL(None).fflush(None)
+        except Exception:
+            pass
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    _libc_flush()
+    save_out, save_err = os.dup(1), os.dup(2)
+    sink = open(path, "a")
+    try:
+        os.dup2(sink.fileno(), 1)
+        os.dup2(sink.fileno(), 2)
+        yield
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        _libc_flush()
+        os.dup2(save_out, 1)
+        os.dup2(save_err, 2)
+        os.close(save_out)
+        os.close(save_err)
+        sink.close()
 
 # src/labutopia (sibling of src/labmate); also on sys.path via the venv .pth, set here defensively.
 LABUTOPIA_DIR = Path(__file__).resolve().parents[2] / "labutopia"
@@ -60,12 +97,17 @@ class SimSession:
     """
 
     def __init__(self, scene_spec: dict, run_dir: str, headless: bool = True,
-                 objects: Optional[list[dict]] = None, scene_flags: Optional[list[str]] = None):
+                 objects: Optional[list[dict]] = None, scene_flags: Optional[list[str]] = None,
+                 multi_visible: bool = False, quiet: bool = False):
         self.scene_spec = scene_spec
         self.run_dir = run_dir
         self.headless = headless
+        self.quiet = quiet                            # suppress Isaac/Kit log spam (carb/omni.log)
         self.objects = objects if objects is not None else self._objects_from_scene_spec(scene_spec)
         self.scene_flags = list(scene_flags or [])
+        # interactive demo: keep ALL configured objects placed + visible (LabUtopia normally hides
+        # every object except current_obj_idx). Re-applied after each task.reset().
+        self.multi_visible = multi_visible
         self.robot_xy = [0.0, 0.0]
         self._index_by_name: dict[str, int] = {}
         self._app = None
@@ -86,15 +128,38 @@ class SimSession:
         ]
 
     # ---- lifecycle ------------------------------------------------------
+    def _quiet_io(self):
+        """Redirect Isaac's fd-level log spam to ``<run_dir>/sim.log`` when ``quiet`` (else no-op)."""
+        if not self.quiet:
+            return contextlib.nullcontext()
+        os.makedirs(self.run_dir, exist_ok=True)
+        return _redirect_fds_to(str(Path(self.run_dir) / "sim.log"))
+
     def start(self) -> "SimSession":
         if str(LABUTOPIA_DIR) not in sys.path:
             sys.path.insert(0, str(LABUTOPIA_DIR))
+        os.makedirs(self.run_dir, exist_ok=True)
+        with self._quiet_io():
+            self._start_impl()
+        return self
 
+    def _start_impl(self) -> None:
         from isaacsim import SimulationApp
-        self._app = SimulationApp(
-            {"headless": self.headless,
-             "extra_args": ["--/rtx/raytracing/fractionalCutoutOpacity=true"]}
-        )
+        extra_args = ["--/rtx/raytracing/fractionalCutoutOpacity=true"]
+        if self.quiet:
+            # drop Kit/carb warning+info spam to stderr (our own stdout prints are unaffected)
+            extra_args += ["--/log/level=error", "--/log/outputStreamLevel=error",
+                           "--/log/fileLogLevel=error"]
+        self._app = SimulationApp({"headless": self.headless, "extra_args": extra_args})
+
+        if self.quiet:
+            try:
+                import carb
+                _s = carb.settings.get_settings()
+                _s.set_string("/log/level", "error")
+                _s.set_string("/log/outputStreamLevel", "error")
+            except Exception:
+                pass
 
         import numpy as np
         import omni
@@ -142,16 +207,19 @@ class SimSession:
         self._task = create_task(cfg.task_type, cfg=cfg, world=self._world, stage=self._stage, robot=self._robot)
         # Controllers are created FRESH per skill in run_skill (their episode_count is cumulative, so
         # one controller cannot be reused for a sequence/retry — Explore finding, docs/11).
-        return self
+        if self.multi_visible:
+            self.show_all_objects()                   # interactive demo: co-present scene at startup
+            self.pump()
 
     def close(self) -> None:
-        if self._controller is not None:
-            try:
-                self._controller.close()
-            except Exception:
-                pass
-        if self._app is not None:
-            self._app.close()
+        with self._quiet_io():
+            if self._controller is not None:
+                try:
+                    self._controller.close()
+                except Exception:
+                    pass
+            if self._app is not None:
+                self._app.close()
 
     # ---- execution ------------------------------------------------------
     def run_skill(self, controller_type: Optional[str] = None) -> bool:
@@ -163,6 +231,10 @@ class SimSession:
         works for multi-skill sequences and retries (W3). We do NOT call `task.on_task_complete` here:
         its index/material cycling would drift `current_obj_idx` away from what `select()` pinned (#3).
         """
+        with self._quiet_io():                        # keep Isaac/RMPFlow stdio out of the REPL
+            return self._run_skill_impl(controller_type)
+
+    def _run_skill_impl(self, controller_type: Optional[str]) -> bool:
         from factories.controller_factory import create_controller
 
         cfg, task, world, robot, app = (
@@ -174,6 +246,8 @@ class SimSession:
         try:
             steps = 0
             task.reset()
+            if self.multi_visible:
+                self.show_all_objects()               # reset() re-hid the neighbours — show them again
             while app.is_running():
                 world.step(render=True)
                 if not world.is_playing():
@@ -196,6 +270,37 @@ class SimSession:
             except Exception:
                 pass
             self._controller = None
+
+    def show_all_objects(self) -> None:
+        """Place ALL configured objects at their declared poses and make them visible (demo).
+
+        LabUtopia's ``place_objects_with_visibility_management`` keeps only ``current_obj_idx`` visible
+        and teleports the rest 10 m away; for a co-present interactive scene we undo that. Visibility is
+        set once and persists through the skill (controllers never touch it — Explore finding).
+        """
+        if self._stage is None or self._objutils is None:
+            return
+        import numpy as np
+        from isaacsim.core.utils.prims import set_prim_visibility
+        for o in self.objects:
+            pose, path = o.get("pose"), o.get("usd_path")
+            if not pose or not path:
+                continue
+            prim = self._stage.GetPrimAtPath(path)
+            if not prim.IsValid():
+                continue
+            self._objutils.set_object_position(object_path=path, position=np.array(pose, dtype=float))
+            set_prim_visibility(prim, True)
+
+    def pump(self, frames: int = 60) -> None:
+        """Idle-render N frames (keep the viewport alive between commands, let physics settle)."""
+        if self._app is None or self._world is None:
+            return
+        with self._quiet_io():
+            for _ in range(frames):
+                if not self._app.is_running():
+                    break
+                self._world.step(render=True)
 
     def select(self, target_name: Optional[str]) -> None:
         """Point the task at the object the planner grounded to (W2 multi-object pick)."""

@@ -47,7 +47,12 @@ _NUM_WORDS = {
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
 }
 
-_QUALIFIERS = ("left", "right", "near", "inside", "empty", "full", "hot", "capped", "dirty", "clean")
+# words that make the instruction a referring expression (object_ref) — kept in sync with the
+# grounding resolver's spatial/attribute vocabulary (scene/grounding.py) so e.g. "the hazardous
+# beaker" actually filters by attribute rather than staying ambiguous.
+_QUALIFIERS = ("left", "right", "near", "inside", "nearest", "closest", "farthest", "furthest",
+               "empty", "full", "filled", "hot", "capped", "open", "dirty", "contaminated",
+               "clean", "hazardous")
 
 
 class RuleParser:
