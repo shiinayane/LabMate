@@ -44,9 +44,13 @@ def main() -> None:
     ap.add_argument("--verbose-sim", action="store_true", help="don't suppress Isaac/Kit logs")
     ap.add_argument("--no-runtime-stop", action="store_true",
                     help="disable the B1b runtime disturbance monitor")
+    ap.add_argument("--no-clutter", action="store_true",
+                    help="disable the B1a clutter gate (e.g. to let a blocked pick run and exercise B1b)")
     args = ap.parse_args()
 
     cfg = PlannerConfig.load(args.planner)
+    if args.no_clutter:
+        cfg.clutter_check = False
     scene_spec = json.loads((REPO / "benchmark" / "scenes" / f"{args.scene}.json").read_text())
     objects, scene_flags = _load_objects(args.objects)
     parser = RuleParser()
@@ -61,8 +65,11 @@ def main() -> None:
     try:
         backend = SimBackend(session)
         names = [o["name"] for o in session.objects if o.get("pose")]
+        b1a = "on" if cfg.clutter_check else "OFF"
+        b1b = "on" if not args.no_runtime_stop else "OFF"
         print(f"\n=== LabMate interactive demo ({cfg.name}) ===", flush=True)
         print(f"objects in scene: {', '.join(names)}", flush=True)
+        print(f"safety: B1a clutter-gate={b1a}  B1b runtime-stop={b1b}", flush=True)
         print("type an instruction (e.g. 'pick the left conical bottle'); 'reset' / 'quit'.\n", flush=True)
 
         ask_fn = lambda q: input(f"  ↳ {q}\n  > ").strip()
