@@ -43,11 +43,12 @@ class DisturbanceMonitor:
     def update(self, positions: dict[str, Sequence[float]]) -> Optional[tuple[str, float]]:
         """First non-target object displaced past threshold (largest first), else None."""
         worst: Optional[tuple[str, float]] = None
+        floor = max(self.threshold, self.deadband)        # well-defined regardless of which is larger
         for name, pos in positions.items():
             if name == self.target or pos is None or name not in self._baseline:
                 continue
             d = _dist(pos, self._baseline[name])
-            if d < self.deadband or d <= self.threshold:
+            if d <= floor:                                # ignore jitter / sub-threshold motion
                 continue
             if worst is None or d > worst[1]:
                 worst = (name, d)

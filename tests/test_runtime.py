@@ -27,6 +27,14 @@ def test_monitor_trips_on_non_target_only():
     assert hit is not None and hit[0] == "a" and hit[1] == pytest.approx(0.05, abs=1e-6)
 
 
+def test_monitor_threshold_boundary_and_unbaselined():
+    m = DisturbanceMonitor(target="t", threshold=0.03)
+    m.set_baseline({"t": [0, 0, 0], "a": [1, 0, 0]})
+    assert m.update({"a": [1.029, 0, 0]}) is None           # below threshold -> no trip
+    assert m.update({"a": [1.05, 0, 0]}) is not None        # above threshold -> trip
+    assert m.update({"c": [9, 9, 9]}) is None               # not in baseline (appeared later) -> ignored
+
+
 def test_monitor_reports_worst_offender():
     m = DisturbanceMonitor(target="t", threshold=0.03)
     m.set_baseline({"t": [0, 0, 0], "a": [1, 0, 0], "b": [2, 0, 0]})

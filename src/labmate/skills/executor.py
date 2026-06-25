@@ -12,13 +12,6 @@ from ..scene.scene_graph import SceneGraph
 from .registry import Candidate
 
 
-def run(skill, args: dict, session) -> bool:
-    """docs/03 executor contract: drive the controller, return ``ok and skill.success(sg)``."""
-    raw_ok = session.run_skill()
-    sg = session.build_scene_graph(held=args.get("target") if raw_ok else None)
-    return raw_ok and bool(skill.success(args, sg))
-
-
 class SimBackend:
     """Backend protocol over a live SimSession (Isaac Sim is reached only via the adapter)."""
 

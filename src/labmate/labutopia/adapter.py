@@ -100,7 +100,7 @@ class SimSession:
     def __init__(self, scene_spec: dict, run_dir: str, headless: bool = True,
                  objects: Optional[list[dict]] = None, scene_flags: Optional[list[str]] = None,
                  multi_visible: bool = False, quiet: bool = False,
-                 monitor_disturbance: bool = False, disturb_threshold: float = 0.03,
+                 monitor_disturbance: bool = False, disturb_threshold: float = 0.02,
                  settle_frames: int = 30):
         self.scene_spec = scene_spec
         self.run_dir = run_dir
@@ -267,11 +267,17 @@ class SimSession:
                 state = task.step()
                 if state is None:
                     continue
+                # NOTE: task.step() can advance current_obj_idx if a skill overruns the task's own
+                # max_steps (check_frame_limits -> on_task_complete). Harmless here: select() re-pins
+                # it before every run_skill, and the only path that ran without select (executor.run)
+                # was removed. We deliberately do NOT stop on reset_needed — that would preempt the B1b
+                # disturbance monitor on a stuck-and-flailing skill (audit-2).
                 if monitor is not None:               # B1b runtime disturbance stop
                     pos = self._object_positions()
-                    if steps == self.settle_frames:
-                        monitor.set_baseline(pos)
-                    elif monitor.ready:
+                    if not monitor.ready:
+                        if steps >= self.settle_frames:   # arm once settled (>= so a short skip still arms)
+                            monitor.set_baseline(pos)
+                    else:
                         hit = monitor.update(pos)
                         if hit is not None:
                             self._last_stop = {"object": hit[0], "disp": hit[1]}
@@ -340,7 +346,13 @@ class SimSession:
         return next((o for o in self.objects if o.get("name") == name), None)
 
     def move_object(self, name: str, x: float, y: float, z: Optional[float] = None) -> list[float]:
-        """Relocate an object in the live sim AND its declared pose, so grounding re-reads it (Path A)."""
+        """Relocate an object in the live sim AND its declared pose, so grounding re-reads it (Path A).
+
+        NOTE: the physical move only persists across the NEXT skill if ``multi_visible`` is on (each
+        ``run_skill`` calls ``task.reset()`` which re-places objects from a frozen snapshot, then
+        ``show_all_objects()`` re-applies our updated poses). The interactive demo uses
+        ``multi_visible=True``; do not call this on a non-multi_visible session.
+        """
         o = self._spec(name)
         if o is None or not o.get("usd_path"):
             raise KeyError(name)

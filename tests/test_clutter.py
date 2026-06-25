@@ -85,6 +85,25 @@ def test_no_grasp_column_cascade_at_default_clearance():
     assert decision.kind == "ACT" and gi["feasibility"]["cluttered"] is False
 
 
+# ---- the ASK question names an isolated same-category alternative ------
+def test_clutter_question_offers_isolated_alternative():
+    sg = _scene({"beaker_a": [0.30, 0.05], "beaker_b": [0.30, 0.00], "beaker_c": [0.55, -0.35]})
+    schema, cands = _left_beaker_cands(sg)            # grounds to beaker_a (left), crowded by beaker_b
+    cfg = PlannerConfig(name="sg", propose="scene_grounded", clutter_check=True, clearance=0.10)
+    decision, _, _ = gate_traced(cands, schema, sg, cfg)
+    assert decision.kind == "ASK" and "beaker_c" in decision.question   # the clear-path alternative
+
+
+# ---- no_feasible_skill surfaces the unmet precondition (human reason) --
+def test_run_turn_no_feasible_human_reason():
+    sg = SceneGraph.from_specs(
+        [{"name": "b", "category": "beaker", "pose": [0.30, 0.0, 0.85], "flags": {"is_graspable": False}}],
+        frame=FRAME)
+    cfg = PlannerConfig(name="sg", propose="scene_grounded")    # clutter off; not graspable -> no_feasible
+    res = run_turn("pick the beaker", cfg, SymbolicBackend(sg), RuleParser(), lambda q: "")
+    assert res.refused and "unmet precondition" in (res.reason or "")
+
+
 # ---- approach-corridor: object on the robot->target line is a blocker ---
 def test_approach_blockers_on_path_only():
     sg = SceneGraph.from_specs([

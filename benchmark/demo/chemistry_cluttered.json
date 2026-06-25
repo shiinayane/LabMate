@@ -1,0 +1,10 @@
+{
+  "_comment": "B1b demo scene. beaker1 is an UNGRASPABLE target (LabUtopia's pick controller is tuned per-object; beakers can't be grasped) — attempting to pick it makes the arm flail and disturb the nearby graspable bottle. Run with `--no-clutter` (so B1a doesn't ASK on the path first): 'pick the beaker' -> ACT -> the arm knocks conical_bottle02 -> B1b 'stopped — bumped conical_bottle02'. Objects are 12.8cm apart (no spawn overlap). disturb_threshold is 0.02 (a clean pick disturbs 0cm, the flail ~3cm). NOTE: RMPFlow flailing is somewhat stochastic, so the trip is reliable-ish, not 100%.",
+  "objects": [
+    {"name": "beaker1", "usd_path": "/World/beaker1", "category": "beaker",
+     "pose": [0.36, 0.22, 0.82], "flags": {"is_graspable": true}},
+    {"name": "conical_bottle02", "usd_path": "/World/conical_bottle02", "category": "conical_flask",
+     "pose": [0.28, 0.12, 0.82], "flags": {"is_graspable": true}}
+  ],
+  "scene_flags": []
+}
