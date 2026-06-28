@@ -63,8 +63,18 @@ limitation to state honestly.
 
 - **B2 · More skills via approach B (open DONE, 2026-06).** The adapter builds the matching LabUtopia
   task **per skill** on one live session (`adapter._SKILL_TASK` + `_ensure_task`, cached), so a single
-  session does `pick` AND `open` — both run, task-switch is clean, pick still grasps after an open.
-  `open` is wired end-to-end (parser/grounding/goals already supported it). **Polish (corrected):** the
+  session *can* do `pick` AND `open` — both run, task-switch is clean, pick still grasps after an open.
+  `open` is wired end-to-end (parser/grounding/goals already supported it). **Scene split (2026-06):**
+  the demo now ships **one scene per skill family** rather than one unified scene, because `pick` and
+  `open` are *different* LabUtopia tasks and an object from a not-yet-built task is hidden — so in the
+  unified scene the drawer *popped in* mid-session on the first `open`. The pick scene
+  (`--scene chemistry_lab_multi --objects chemistry_demo.json`) is bottles+beakers only; the open scene
+  (`--scene chemistry_drawer --objects chemistry_drawer.json`) makes `openclose` the **default** task so
+  `Cabinet_01` is native and co-present from frame 0. The adapter pins a `fixed` furniture object's
+  `obj_paths` range to its declared pose and, when fixed furniture is present, does a startup
+  `task.reset()` so the drawer renders from frame 0 (pick scene path unchanged — guarded on fixed
+  furniture). The unified single-session path still works (approach B is unchanged); the split is purely
+  a cleaner demo narrative. **Polish (corrected):** the
   drawer-open is NOT an asset bug — **native LabUtopia (`main.py --config-name level1_open_drawer`)
   opens it perfectly**, and our isolated `run_skill('open')` succeeds. The earlier "12 m yank" was a
   `get_geometry_center` measurement artifact, and the demo's `ok=False` was the **B1b monitor

@@ -216,6 +216,17 @@ class SimSession:
                 for o in placed
             ]
             self._index_by_name = {o["name"]: i for i, o in enumerate(placed)}
+        # Pin any `fixed` furniture the DEFAULT task already owns (e.g. the drawer in the openclose
+        # scene) to its declared pose, so it sits at a fixed spot instead of randomising within the
+        # task's position_range between the startup view and execution. We only override entries the
+        # task already lists (never ADD furniture to obj_paths — a pick task must not target it).
+        fixed_poses = {o["usd_path"]: o["pose"] for o in self.objects
+                       if o.get("fixed") and o.get("pose") and o.get("usd_path")}
+        if fixed_poses:
+            for entry in (cfg.task.get("obj_paths") or []):
+                pose = fixed_poses.get(entry.get("path"))
+                if pose:
+                    entry.position_range = {"x": [pose[0]] * 2, "y": [pose[1]] * 2, "z": [pose[2]] * 2}
         self._cfg = cfg
 
         self._world = World(stage_units_in_meters=1.0, physics_prim_path="/physicsScene", backend="numpy")
@@ -231,6 +242,11 @@ class SimSession:
         # Controllers are created FRESH per skill in run_skill (their episode_count is cumulative, so
         # one controller cannot be reused for a sequence/retry — Explore finding, docs/11).
         if self.multi_visible:
+            # If the default task owns furniture (e.g. the drawer in the openclose scene), its reset()
+            # places + makes that furniture visible — so the cabinet is co-present from frame 0 instead
+            # of popping in on the first `open`. Guarded on fixed furniture; the pick scene is unchanged.
+            if any(o.get("fixed") for o in self.objects):
+                self._task.reset()
             self.show_all_objects()                   # interactive demo: co-present scene at startup
             self.pump()
 

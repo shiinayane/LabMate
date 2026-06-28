@@ -1,0 +1,8 @@
+{
+  "_comment": "Drawer / open demo objects. Run with `--scene chemistry_drawer` so the DEFAULT LabUtopia task is openclose (level1_open_drawer): the cabinet is the task's own object, placed + visible from frame 0. Cabinet_01 is `fixed` furniture (not rebound into a pick task, not teleported by show_all_objects); the adapter pins its obj_paths range to the declared pose so it sits still, then the startup task.reset() makes it co-present. Try: `open the drawer`.",
+  "objects": [
+    {"name": "Cabinet_01", "usd_path": "/World/Cabinet_01", "category": "drawer",
+     "pose": [0.73, 0.0, 1.15], "fixed": true, "flags": {}}
+  ],
+  "scene_flags": []
+}

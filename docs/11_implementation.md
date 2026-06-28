@@ -85,7 +85,7 @@ Env injection (`LD_PRELOAD`, EULA) is automatic under the user's zsh `uv run` �
 ### Interactive demo (chat → live sim)
 
 ```bash
-# all demo objects co-present + visible; type instructions, the robot picks the grounded one.
+# PICK demo: all objects co-present + visible; type instructions, the robot picks the grounded one.
 # Drop --headless to watch on a VNC desktop (set DISPLAY=:42 from an SSH shell).
 ./scripts/labrun python scripts/interactive.py --objects benchmark/demo/chemistry_demo.json [--headless]
 #   > pick the left conical bottle     -> ACT, robot picks conical_bottle02
@@ -95,14 +95,23 @@ Env injection (`LD_PRELOAD`, EULA) is automatic under the user's zsh `uv run` �
 #       ↳ remove beaker1               -> scene re-read, path clear -> ACT grasp  (HRC: clear → proceed)
 #   commands: move <obj> <x> <y> | move <obj> aside | remove <obj> | reset | quit
 #   flags: --no-clutter (off B1a) | --no-runtime-stop (off B1b)
+
+# OPEN demo (separate scene so the drawer is native + co-present from frame 0):
+./scripts/labrun python scripts/interactive.py --scene chemistry_drawer \
+    --objects benchmark/demo/chemistry_drawer.json [--headless]
+#   > open the drawer                  -> ACT, robot pulls Cabinet_01 open
 ```
 
 **Multiple skills (approach B).** The adapter builds the LabUtopia task **matching each skill** on the
 same live session (`_SKILL_TASK` registry + `_ensure_task`, cached): `pick` uses the scene's default
 task; `open`/`close` build an `openclose` task from `level1_open_drawer` on demand (verified: a second
-task on the same world/stage/robot works). `fixed: true` scene objects (furniture, e.g. the drawer
-`Cabinet_01`) are excluded from the pick rebind + `show_all_objects` (kept at their USD pose, referenced
-by their own skill task). LabMate's parser/grounding/goals already supported `open` end-to-end, so
+task on the same world/stage/robot works). **The demo ships one scene per skill family** (the pick scene
+is bottles+beakers; the `chemistry_drawer` scene makes `openclose` the *default* task) — because an
+object belonging to a not-yet-built task is hidden, so in a unified scene the drawer popped in mid-session
+on the first `open`. `fixed: true` scene objects (furniture, e.g. the drawer `Cabinet_01`) are excluded
+from the pick rebind + `show_all_objects` (kept at their USD pose); the adapter pins a fixed object's
+`obj_paths` range to its declared pose and, when fixed furniture is present, does a startup `task.reset()`
+so the drawer renders from frame 0. LabMate's parser/grounding/goals already supported `open` end-to-end, so
 `"open the drawer"` grounds + gates with no planner changes. The robot physically opens the drawer
 (native LabUtopia opens it perfectly; our `run_skill('open')` succeeds). The earlier demo failure was the
 **B1b monitor false-stopping** the open (the arm swinging to the far cabinet brushed a bottle ~2 cm) —

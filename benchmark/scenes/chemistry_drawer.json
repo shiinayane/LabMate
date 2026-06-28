@@ -1,0 +1,7 @@
+{
+  "scene": "chemistry_drawer",
+  "usd": "assets/chemistry_lab/lab_001/lab_001.usd",
+  "labutopia_config": "level1_open_drawer",
+  "robot": "franka",
+  "note": "Drawer / open demo. Default LabUtopia task is `openclose` (the cabinet is native to it), so Cabinet_01 is present and visible from frame 0 — no mid-session pop-in. Pair with --objects benchmark/demo/chemistry_drawer.json."
+}

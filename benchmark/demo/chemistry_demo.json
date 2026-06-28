@@ -1,5 +1,5 @@
 {
-  "_comment": "Interactive demo object set (scripts/interactive.py). Prims exist in lab_001.usd. Poses spaced so neighbours stay clear of the arm. left_sign=1 => larger y is the robot's left.",
+  "_comment": "Pick demo object set (scripts/interactive.py, default --scene chemistry_lab_multi -> pick task). Prims exist in lab_001.usd. Poses spaced so neighbours stay clear of the arm. left_sign=1 => larger y is the robot's left. The drawer/open demo is a SEPARATE scene: --scene chemistry_drawer --objects benchmark/demo/chemistry_drawer.json.",
   "objects": [
     {"name": "conical_bottle02", "usd_path": "/World/conical_bottle02", "category": "conical_flask",
      "pose": [0.28, 0.12, 0.82], "flags": {"is_graspable": true}},
@@ -8,9 +8,7 @@
     {"name": "beaker1", "usd_path": "/World/beaker1", "category": "beaker",
      "pose": [0.14, 0.09, 0.82], "flags": {"is_graspable": true, "is_fragile": true}},
     {"name": "beaker2", "usd_path": "/World/beaker2", "category": "beaker",
-     "pose": [0.36, -0.22, 0.82], "flags": {"is_graspable": true, "is_hazardous": true}},
-    {"name": "Cabinet_01", "usd_path": "/World/Cabinet_01", "category": "drawer",
-     "pose": [0.73, 0.0, 1.15], "fixed": true, "flags": {}}
+     "pose": [0.36, -0.22, 0.82], "flags": {"is_graspable": true, "is_hazardous": true}}
   ],
   "scene_flags": []
 }

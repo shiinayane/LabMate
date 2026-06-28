@@ -1,12 +1,18 @@
 """Interactive multi-object demo: chat with the running sim (docs/11).
 
+    # pick demo (bottles + beakers):
     ./scripts/labrun python scripts/interactive.py \
         --objects benchmark/demo/chemistry_demo.json [--headless]
+    # open demo (drawer is native + co-present from frame 0):
+    ./scripts/labrun python scripts/interactive.py \
+        --scene chemistry_drawer --objects benchmark/demo/chemistry_drawer.json [--headless]
 
 Brings the sim up ONCE with ALL configured objects placed + visible, then a blocking REPL: type an
 instruction, the robot picks the grounded object; ambiguous -> it ASKs (answer at the prompt); unsafe
 -> it REFUSEs and nothing runs. Drop ``--headless`` to see the window on a VNC desktop. Robot motion
-is wired for ``pick`` only (docs/11). Commands: ``reset`` (re-home + re-show), ``quit``/``exit``.
+is wired for ``pick`` and ``open`` (one scene per skill family — pick uses the default scene, ``open``
+uses ``--scene chemistry_drawer`` whose default LabUtopia task is ``openclose``). Commands: ``reset``
+(re-home + re-show), ``quit``/``exit``.
 """
 
 from __future__ import annotations
