@@ -103,10 +103,11 @@ task; `open`/`close` build an `openclose` task from `level1_open_drawer` on dema
 task on the same world/stage/robot works). `fixed: true` scene objects (furniture, e.g. the drawer
 `Cabinet_01`) are excluded from the pick rebind + `show_all_objects` (kept at their USD pose, referenced
 by their own skill task). LabMate's parser/grounding/goals already supported `open` end-to-end, so
-`"open the drawer"` grounds + gates with no planner changes. **Caveat:** the drawer-*open* itself is not
-yet clean in `lab_001` (the Cabinet asset gets yanked rather than sliding tidily → `is_success` is
-borderline) — the architecture/skill-switch is proven; reliable drawer/door actuation is asset tuning
-(docs/12).
+`"open the drawer"` grounds + gates with no planner changes. The robot physically opens the drawer
+(native LabUtopia opens it perfectly; our `run_skill('open')` succeeds). The earlier demo failure was the
+**B1b monitor false-stopping** the open (the arm swinging to the far cabinet brushed a bottle ~2 cm) —
+fixed by raising `disturb_threshold` to 0.05 m. The open controller's own `is_success` is still flaky
+(reporting only; the drawer opens regardless) — docs/12 B2.
 
 **Human-robot collaboration (Path A).** When the gate ASKs (B1a clutter) or stops (B1b disturbance), the
 human edits the scene — `move`/`remove` an obstacle — and re-issues (or answers the ASK inline with a

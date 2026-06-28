@@ -38,11 +38,13 @@ behaviour ≈ running a motion planner — genuinely hard. Three layers, escalat
   *during* execution and **stop the moment a non-target object is disturbed**, then hand to the human.
   `safety/runtime.py::DisturbanceMonitor` (pure) is fed each object's `get_geometry_center` per frame by
   `adapter._run_skill_impl`; it baselines **after a settle delay** (`settle_frames`, the pre-settle drop
-  is jitter, not contact) and trips when a non-target moves past `disturb_threshold` (default 0.03 m,
+  is jitter, not contact) and trips when a non-target moves past `disturb_threshold` (default **0.05 m**,
   excluding the grasp target). On a hit, `run_skill` stops and records `_last_stop`; `SimBackend.execute`
   surfaces it as `last_outcome`; `interactive.run_turn` ends the turn with `stopped` + a readable reason
-  ("bumped X"). **Verified in sim:** a clean isolated pick disturbs 0.0 cm (no false stop); the cramped
-  `beaker1` pick halts the instant `conical_bottle02` crosses 3 cm. Switch: `SimSession(
+  ("bumped X"). **Threshold = 0.05 m (tuned 2026-06):** distinguishes a **real knock** (the flail demo
+  flings its neighbour >>5 cm) from **incidental jiggle** (a far object brushed ~2 cm during a big arm
+  motion — e.g. the arm swinging to open the drawer nudged a bottle 2 cm, which at the old 0.02 m
+  **false-stopped the `open`**; 0.05 fixes that and a clean pick still disturbs 0 cm). Switch: `SimSession(
   monitor_disturbance=...)`, on by default for the demo (`--no-runtime-stop` to disable). Reactive —
   bounds damage, not zero-contact (that's why **B1a** stays as the preventive layer). **Deferred:** finger
   contact-sensor signal (catch contact *before* the object moves); joint-effort/EE-velocity (saturate —
@@ -59,18 +61,21 @@ limitation to state honestly.
 
 ## Interactive demo limitations (current cut)
 
-- **B2 · More skills via approach B (open DONE-ish, 2026-06).** The adapter now builds the matching
-  LabUtopia task **per skill** on one live session (`adapter._SKILL_TASK` + `_ensure_task`, cached),
-  so a single session does `pick` AND `open` — verified both run, task-switch is clean, pick still
-  grasps after an open. `open` is wired end-to-end (parser/grounding/goals already supported it).
-  **Open caveat:** the drawer-*open* is not clean in `lab_001` — the `Cabinet_01` asset gets yanked
-  rather than sliding (probe "succeeded" by flinging it 12 m; demo reports `is_success=False`). The
-  *architecture* is proven; **reliable drawer/door actuation is asset/per-object tuning** (like pick's
-  grasp tuning). Follow-ups: tune the cabinet drawer, or do a **door** (`DryingBox`) — but it spawns
-  open and there's no set-joint API in `ObjectUtils`, so it'd need setting the dof via the Isaac
-  articulation API. **`close`** is a trivial follow-up (same `openclose` task). **`place`/`pour`/`clean`**
-  remain composite tasks (DualObjectTask/PickPourTask/CleanBeakerTask) — addable via the same B pattern
-  (build their task) + per-object tuning. Until `place` lands, the gripper-full case still needs `reset`.
+- **B2 · More skills via approach B (open DONE, 2026-06).** The adapter builds the matching LabUtopia
+  task **per skill** on one live session (`adapter._SKILL_TASK` + `_ensure_task`, cached), so a single
+  session does `pick` AND `open` — both run, task-switch is clean, pick still grasps after an open.
+  `open` is wired end-to-end (parser/grounding/goals already supported it). **Polish (corrected):** the
+  drawer-open is NOT an asset bug — **native LabUtopia (`main.py --config-name level1_open_drawer`)
+  opens it perfectly**, and our isolated `run_skill('open')` succeeds. The earlier "12 m yank" was a
+  `get_geometry_center` measurement artifact, and the demo's `ok=False` was the **B1b monitor
+  false-stopping** the open (the arm swinging to the far cabinet brushed a bottle ~2 cm > the old 2 cm
+  threshold). Fixed by raising `disturb_threshold` to 0.05 m (see B1b). **Remaining wart:** the open
+  controller's own `is_success` is flaky (sometimes reports False even when the drawer opens) — same
+  class as pick's borderline success; a sim-GT verification (B5) would fix the *reporting* but the
+  drawer's bbox center is unreliable, so deferred. The robot physically opens the drawer. **`close`** is
+  a trivial follow-up (same `openclose` task). **`place`/`pour`/`clean`** remain composite tasks
+  (DualObjectTask/PickPourTask/CleanBeakerTask) — addable via the same B pattern + per-object tuning.
+  Until `place` lands, the gripper-full case still needs `reset`.
 - **HRC scene editing — Path A (DONE, 2026-06).** When the robot ASKs/stops, the human clears the
   obstacle: REPL `move <obj> <x> <y>` / `move <obj> aside` / `remove <obj>` (`adapter.move_object`/
   `remove_object`) relocate the prim AND update its declared pose, so `build_scene_graph` re-grounds

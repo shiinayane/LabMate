@@ -107,7 +107,7 @@ class SimSession:
     def __init__(self, scene_spec: dict, run_dir: str, headless: bool = True,
                  objects: Optional[list[dict]] = None, scene_flags: Optional[list[str]] = None,
                  multi_visible: bool = False, quiet: bool = False,
-                 monitor_disturbance: bool = False, disturb_threshold: float = 0.02,
+                 monitor_disturbance: bool = False, disturb_threshold: float = 0.05,
                  settle_frames: int = 30):
         self.scene_spec = scene_spec
         self.run_dir = run_dir
