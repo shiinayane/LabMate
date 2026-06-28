@@ -64,6 +64,13 @@ LABUTOPIA_DIR = Path(__file__).resolve().parents[2] / "labutopia"
 # VERIFY on the first multi-object run and flip if needed (see docs/11 / W2 plan risks).
 LEFT_SIGN = 1
 
+# Skills whose controller needs a NON-default LabUtopia task built from its own config (approach B,
+# docs/12): controller -> (task_type, config-file-stem). `pick` uses the scene's default task.
+_SKILL_TASK = {
+    "open": ("openclose", "level1_open_drawer"),
+    "close": ("openclose", "level1_open_drawer"),
+}
+
 
 def _patch_omegaconf_resolver_once() -> None:
     """Force ``OmegaConf.register_new_resolver(..., replace=True)`` process-wide.
@@ -125,6 +132,8 @@ class SimSession:
         self._robot = None
         self._stage = None
         self._task = None
+        self._tasks: dict = {}                        # task_type -> (task, cfg) (approach B, lazy)
+        self._default_task_type = None                # the scene's task (pick); set in _start_impl
         self._controller = None
         self._objutils = None
         self._cfg = None
@@ -195,7 +204,9 @@ class SimSession:
 
         # W2: rebind the task's objects to this episode's placed objects (degenerate position_range =
         # fixed pose). The candidate order defines current_obj_idx, used by select() to pick a target.
-        placed = [o for o in self.objects if o.get("pose") and o.get("usd_path")]
+        # `fixed` objects (furniture, e.g. a drawer) are NOT placeable -> excluded (they keep their USD
+        # pose; their own skill task references them, approach B).
+        placed = [o for o in self.objects if o.get("pose") and o.get("usd_path") and not o.get("fixed")]
         if placed:
             cfg.task.obj_paths = [
                 {"path": o["usd_path"],
@@ -215,6 +226,8 @@ class SimSession:
         )
         self._objutils = ObjectUtils.get_instance(self._stage)
         self._task = create_task(cfg.task_type, cfg=cfg, world=self._world, stage=self._stage, robot=self._robot)
+        self._default_task_type = cfg.task_type        # the scene's task (pick); approach-B cache key
+        self._tasks[cfg.task_type] = (self._task, cfg)  # task_type -> (task, cfg)
         # Controllers are created FRESH per skill in run_skill (their episode_count is cumulative, so
         # one controller cannot be reused for a sequence/retry — Explore finding, docs/11).
         if self.multi_visible:
@@ -232,6 +245,26 @@ class SimSession:
                 self._app.close()
 
     # ---- execution ------------------------------------------------------
+    def _ensure_task(self, controller_type: Optional[str]):
+        """The (task, cfg) matching this skill's controller — built once on the same world (approach B).
+
+        Most controllers use the scene's default task (pick). Controllers in ``_SKILL_TASK`` (e.g.
+        ``open``) need their own LabUtopia task built from that skill's config, on the SAME
+        world/stage/robot/USD (verified feasible). Cached by task_type.
+        """
+        name = controller_type or self._cfg.controller_type
+        task_type, cfg_file = _SKILL_TASK.get(name, (self._default_task_type, None))
+        if task_type in self._tasks:
+            return self._tasks[task_type]
+        from omegaconf import OmegaConf
+        from factories.task_factory import create_task
+        scfg = OmegaConf.load(str(LABUTOPIA_DIR / "config" / f"{cfg_file}.yaml"))
+        scfg.collector.type = "mock"
+        scfg.multi_run.run_dir = self.run_dir
+        task = create_task(task_type, cfg=scfg, world=self._world, stage=self._stage, robot=self._robot)
+        self._tasks[task_type] = (task, scfg)
+        return task, scfg
+
     def run_skill(self, controller_type: Optional[str] = None) -> bool:
         """Drive ONE scripted skill to completion and return its success.
 
@@ -247,9 +280,9 @@ class SimSession:
     def _run_skill_impl(self, controller_type: Optional[str]) -> bool:
         from factories.controller_factory import create_controller
 
-        cfg, task, world, robot, app = (
-            self._cfg, self._task, self._world, self._robot, self._app
-        )
+        task, cfg = self._ensure_task(controller_type)   # approach B: per-skill task + its cfg
+        self._task = task
+        world, robot, app = self._world, self._robot, self._app
         controller = create_controller(controller_type or cfg.controller_type, cfg=cfg, robot=robot)
         self._controller = controller                 # tracked so close() can clean up (#4)
         cap = int(getattr(cfg.task, "max_steps", 800)) + 200   # hard frame cap: never hang (#2)
@@ -331,7 +364,7 @@ class SimSession:
         from isaacsim.core.utils.prims import set_prim_visibility
         for o in self.objects:
             pose, path = o.get("pose"), o.get("usd_path")
-            if not pose or not path:
+            if not pose or not path or o.get("fixed"):    # never reposition furniture (drawer/door)
                 continue
             prim = self._stage.GetPrimAtPath(path)
             if not prim.IsValid():

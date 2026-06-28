@@ -35,7 +35,10 @@ class SimBackend:
         self._attempts += 1
         if self.induce_failure and self._attempts == 1:
             return False                              # induced first-attempt failure (no sim) -> retry
-        self.session.select(candidate.args.get("target"))   # W2: pick the grounded object
+        # W2: point the sim at the grounded object — any object-arg (pick=target, open=container, ...)
+        # so the B1b monitor excludes the skill's own object (e.g. the drawer it's meant to move).
+        obj = candidate.args.get("target") or candidate.args.get("container") or candidate.args.get("src")
+        self.session.select(obj)
         raw_ok = self.session.run_skill(candidate.skill.controller)
         stop = getattr(self.session, "_last_stop", None)     # B1b runtime disturbance stop
         self.last_outcome = {"ok": raw_ok, "stopped": stop is not None,

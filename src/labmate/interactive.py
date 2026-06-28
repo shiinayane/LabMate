@@ -19,8 +19,9 @@ from .planner import goals, loop
 from .scene import grounding
 from .trace import GroundingTrace, StepTrace
 
-# skills whose LabUtopia controller runs standalone via SimSession.run_skill (audit/Explore finding)
-SIM_DRIVABLE = {"pick"}
+# skills whose LabUtopia controller our adapter can drive (pick = scene task; open/close = their own
+# `openclose` task built on demand, approach B). place/pour/clean need composite tasks (docs/12).
+SIM_DRIVABLE = {"pick", "open", "close"}
 
 # ask_fn may return this to mean "I edited the scene (moved/removed an obstacle) — re-gate the SAME
 # instruction against the new layout" (HRC: clear the path, then proceed). Distinct from a re-target

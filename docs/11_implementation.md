@@ -97,6 +97,17 @@ Env injection (`LD_PRELOAD`, EULA) is automatic under the user's zsh `uv run` �
 #   flags: --no-clutter (off B1a) | --no-runtime-stop (off B1b)
 ```
 
+**Multiple skills (approach B).** The adapter builds the LabUtopia task **matching each skill** on the
+same live session (`_SKILL_TASK` registry + `_ensure_task`, cached): `pick` uses the scene's default
+task; `open`/`close` build an `openclose` task from `level1_open_drawer` on demand (verified: a second
+task on the same world/stage/robot works). `fixed: true` scene objects (furniture, e.g. the drawer
+`Cabinet_01`) are excluded from the pick rebind + `show_all_objects` (kept at their USD pose, referenced
+by their own skill task). LabMate's parser/grounding/goals already supported `open` end-to-end, so
+`"open the drawer"` grounds + gates with no planner changes. **Caveat:** the drawer-*open* itself is not
+yet clean in `lab_001` (the Cabinet asset gets yanked rather than sliding tidily → `is_success` is
+borderline) — the architecture/skill-switch is proven; reliable drawer/door actuation is asset tuning
+(docs/12).
+
 **Human-robot collaboration (Path A).** When the gate ASKs (B1a clutter) or stops (B1b disturbance), the
 human edits the scene — `move`/`remove` an obstacle — and re-issues (or answers the ASK inline with a
 `move`/`remove`, which re-gates the same turn). `SimSession.move_object` relocates the prim **and updates

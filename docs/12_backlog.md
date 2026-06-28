@@ -59,10 +59,18 @@ limitation to state honestly.
 
 ## Interactive demo limitations (current cut)
 
-- **B2 · `pick`-only robot motion.** `place`/`pour`/`clean` are LabUtopia *composite* controllers
-  needing their own task (DualObjectTask/CleanBeakerTask); our single PickTask can't drive them. To do
-  real `place` (and thus drop-and-pick-another instead of `reset`), wire a DualObjectTask path. Until
-  then, the gripper-full case requires `reset` between picks.
+- **B2 · More skills via approach B (open DONE-ish, 2026-06).** The adapter now builds the matching
+  LabUtopia task **per skill** on one live session (`adapter._SKILL_TASK` + `_ensure_task`, cached),
+  so a single session does `pick` AND `open` — verified both run, task-switch is clean, pick still
+  grasps after an open. `open` is wired end-to-end (parser/grounding/goals already supported it).
+  **Open caveat:** the drawer-*open* is not clean in `lab_001` — the `Cabinet_01` asset gets yanked
+  rather than sliding (probe "succeeded" by flinging it 12 m; demo reports `is_success=False`). The
+  *architecture* is proven; **reliable drawer/door actuation is asset/per-object tuning** (like pick's
+  grasp tuning). Follow-ups: tune the cabinet drawer, or do a **door** (`DryingBox`) — but it spawns
+  open and there's no set-joint API in `ObjectUtils`, so it'd need setting the dof via the Isaac
+  articulation API. **`close`** is a trivial follow-up (same `openclose` task). **`place`/`pour`/`clean`**
+  remain composite tasks (DualObjectTask/PickPourTask/CleanBeakerTask) — addable via the same B pattern
+  (build their task) + per-object tuning. Until `place` lands, the gripper-full case still needs `reset`.
 - **HRC scene editing — Path A (DONE, 2026-06).** When the robot ASKs/stops, the human clears the
   obstacle: REPL `move <obj> <x> <y>` / `move <obj> aside` / `remove <obj>` (`adapter.move_object`/
   `remove_object`) relocate the prim AND update its declared pose, so `build_scene_graph` re-grounds

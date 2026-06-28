@@ -64,6 +64,17 @@ def test_run_turn_retry_after_inline_edit():
     assert res.ask_turns == 0                       # RETRY must NOT consume a clarification turn
 
 
+# ---- the `open` skill grounds, gates, and executes (symbolic) ----------
+def test_open_drawer_grounds_and_acts():
+    sg = SceneGraph.from_specs(
+        [{"name": "Cabinet_01", "category": "drawer", "pose": [0.73, 0.0, 1.15]}], frame=FRAME)
+    cfg = PlannerConfig(name="sg", propose="scene_grounded")
+    backend = SymbolicBackend(sg)
+    res = run_turn("open the drawer", cfg, backend, RuleParser(), lambda q: "")
+    assert res.decisions[-1].kind == "ACT" and res.executed == 1
+    assert backend.scene_graph().get("Cabinet_01").is_open is True   # the open effect fired
+
+
 # ---- reset restores the initial layout (undo move/remove) --------------
 def test_reset_restores_initial_layout():
     from labmate.labutopia.adapter import SimSession            # sim-free: __init__ imports no Isaac
