@@ -158,4 +158,5 @@ def compute_pc(eval_function: EvalFunction, trace: Sequence[SceneGraph]) -> PCRe
             mark_fail(f"same_arg constraint {c.props} mismatch")
 
     pc = sum(satisfied) / n
-    return PCResult(pc=pc, success=(pc == 1.0), failure_explanation=(None if pc == 1.0 else fail))
+    complete = pc >= 1.0 - 1e-9                       # float-accumulation tolerance (multi-prop)
+    return PCResult(pc=pc, success=complete, failure_explanation=(None if complete else fail))

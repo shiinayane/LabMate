@@ -86,13 +86,18 @@ class SymbolicBackend:
     private copy of the scene graph via ``skill.effects``.
     """
 
-    def __init__(self, sg0: SceneGraph):
+    def __init__(self, sg0: SceneGraph, induce_failure: bool = False):
         self._sg = sg0.model_copy(deep=True)
+        self.induce_failure = induce_failure          # recovery split: fail the first execute, then retry
+        self._attempts = 0
 
     def scene_graph(self) -> SceneGraph:
         return self._sg
 
     def execute(self, candidate: Candidate) -> bool:
+        self._attempts += 1
+        if self.induce_failure and self._attempts == 1:
+            return False                              # induced first-attempt failure -> closed-loop retry
         for eff in candidate.skill.effects:
             eff(candidate.args, self._sg)
         return True

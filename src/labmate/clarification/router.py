@@ -33,7 +33,10 @@ def route_explain(schema: InstructionSchema, sg: SceneGraph) -> tuple[str, str]:
         return "REFUSE", "target_absent"
     if schema.missing_slots:
         return "ASK", f"missing_slot:{'+'.join(schema.missing_slots)}"
-    if res.ambiguous:
+    # A plural / count request ("bring two test tubes") expects several matches — multiple
+    # candidates are the answer, not an ambiguity to clarify (the planner takes the first N).
+    plural = bool(schema.quantity and schema.quantity > 1)
+    if res.ambiguous and not plural:
         return "ASK", f"ambiguous:{len(res.candidates)}"
     return "ACT", "resolved"
 

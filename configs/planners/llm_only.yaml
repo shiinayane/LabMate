@@ -7,7 +7,8 @@ beta: 0.0
 affordance: false
 clarification: false
 safety: false
-monitor: false
+monitor: false        # open-loop: no closed-loop goal check
+max_retries: 0        # open-loop: no retry/replan on failure (keeps it the faithful weak baseline)
 max_steps: 8
 llm:
   model: claude-haiku-4-5
