@@ -120,7 +120,18 @@ limitation to state honestly.
 
 ## Scope items already on the roadmap (09)
 
-- **B11 · W4** — metric aggregation runner (`scripts/run_benchmark.py`/`evaluate.py`/`make_figures.py`
-  are still stubs), Figure 1/2, scale to 50–100 episodes, baseline configs with framework components OFF.
+- **B11 · W4 — decision-level metrics MVP (DONE, 2026-06).** `scripts/run_benchmark.py` runs the whole
+  episode suite × planner configs **sim-free** (`SymbolicBackend`, no Isaac — the paper's headline
+  metrics are decision-level and don't need physical grasping), `scripts/evaluate.py` aggregates the
+  `results.jsonl` into `outputs/eval/metrics.{md,csv}` via the existing `evaluation/metrics.py`. Suite is
+  ~32 episodes (`benchmark/episodes/generate_suite.py`, ~5–6/category) across direct/reference/ambiguous/
+  unsafe/recovery/quantity. The contrast is clean: `llm_only` (the faithful weak baseline) scores **0.00
+  ask-recall, 0.00 unsafe-rejection, 0.82 grounding** vs **1.00 / 1.00 / 1.00** for `scene_grounded`/
+  `saycan`. Two supporting fixes: the clarification router is now quantity-aware (a "bring two X" plural
+  request is not treated as ambiguity), and `SymbolicBackend` honours `induce_failure` so the recovery
+  split works sim-free. `llm_only` needs `ANTHROPIC_API_KEY` (`--with-llm`, loaded from `.env`); the 3
+  key-free baselines run without it. **Still deferred:** `make_figures.py` (Figure 1/2), physical
+  execution success-rate via real sim (needs Isaac + per-episode subprocess; grasp is flaky), `composite`
+  multi-step episodes (single-intent parser), scale to 50–100, AmbiK paired AmbDif metric.
 - **B12 · Multi-object `quantity` execution** (bring N) — grounding + `count_ge` eval exist; physical
   multi-pick delivery needs `place` (B2).
